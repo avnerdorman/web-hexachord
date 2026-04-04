@@ -81,6 +81,13 @@
             animation: growIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
+        .trichord.trajectory {
+            fill: #90ee90;
+            stroke: #4caf50;
+            stroke-width: 2;
+            opacity: 1;
+        }
+
         @keyframes growIn {
             from { transform: scale(0); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
@@ -102,18 +109,35 @@
             pointer-events: none;
         }
 
-        .controls {
+        .controls-wrap {
             position: fixed;
             bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
             display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
             gap: 15px;
             background: white;
             padding: 10px 20px;
             border-radius: 50px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-            z-index: 100;
+        }
+
+        .controls input {
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 1px solid #ccc;
+            font-family: inherit;
+            font-weight: 500;
+            outline: none;
+            width: 250px;
         }
 
         button {
@@ -182,7 +206,7 @@
                 <g v-for="t in allTriangles" :key="t.key">
                     <polygon 
                         :points="getTrianglePoints(t)"
-                        :class="['trichord', t.revealed ? 'revealed' : 'placeholder']"
+                        :class="['trichord', t.revealed ? 'revealed' : 'placeholder', trajectoryKeys.has(t.key) ? 'trajectory' : '']"
                         @click="reveal(t)"
                     />
                 </g>
@@ -203,14 +227,22 @@
             • Scroll to zoom
         </div>
 
-        <div class="controls">
-            <select v-model="selectedIntervals" @change="reset">
-                <option v-for="(ints, index) in allIntervals" :value="ints" :key="index">
-                    {{ getLabelForIntervals(ints) }}
-                </option>
-            </select>
-            <button @click="reset">Reset</button>
-            <button @click="autoExpand">Grow 1 Step</button>
+        <div class="controls-wrap">
+            <div class="controls">
+                <input v-model="traceInput" placeholder="Trace progression (e.g. C, Am, F...)" @keyup.enter="traceProgression" />
+                <button @click="traceProgression">Trace</button>
+                <button @click="clearTrace" v-if="trajectoryKeys.size > 0">Clear</button>
+            </div>
+            
+            <div class="controls">
+                <select v-model="selectedIntervals" @change="reset">
+                    <option v-for="(ints, index) in allIntervals" :value="ints" :key="index">
+                        {{ getLabelForIntervals(ints) }}
+                    </option>
+                </select>
+                <button @click="reset">Reset Space</button>
+                <button @click="autoExpand">Grow 1 Step</button>
+            </div>
         </div>
     </div>
 
@@ -231,6 +263,8 @@
             el: '#app',
             data: {
                 revealedKeys: new Set(['0_0_0']), 
+                trajectoryKeys: new Set(),
+                traceInput: '',
                 pan: { x: window.innerWidth / 2, y: (window.innerHeight - 80) / 2 },
                 zoom: 1,
                 lastMouse: { x: 0, y: 0 },
@@ -348,6 +382,67 @@
                     const currentPlaceholders = [...this.placeholderTriangles];
                     currentPlaceholders.forEach(t => this.revealedKeys.add(t.key));
                     this.revealedKeys = new Set(this.revealedKeys);
+                    this.$forceUpdate();
+                },
+                parseChordPitches(str) {
+                    const rootMap = {"C":0, "C#":1, "DB":1, "D":2, "D#":3, "EB":3, "E":4, "F":5, "F#":6, "GB":6, "G":7, "G#":8, "AB":8, "A":9, "A#":10, "BB":10, "B":11};
+                    const match = str.trim().match(/^([A-G][b#]?)(m|M|min|maj)?$/i);
+                    if (match) {
+                        let rId = rootMap[match[1].toUpperCase()];
+                        if (rId !== undefined) {
+                            let isMinor = (match[2] || '').toLowerCase().startsWith('m') && (match[2] || '').toLowerCase() !== 'maj';
+                            return [rId, (rId + (isMinor ? 3 : 4)) % 12, (rId + 7) % 12].sort((a,b)=>a-b).join(',');
+                        }
+                    }
+                    return str.trim().split(/\s+/).map(n => rootMap[n.toUpperCase()] !== undefined ? rootMap[n.toUpperCase()] : NaN).sort((a,b)=>a-b).join(',');
+                },
+                findClosestTriangle(startKey, targetStr) {
+                    const queue = [startKey];
+                    const visited = new Set([startKey]);
+                    while(queue.length > 0) {
+                        if (visited.size > 2000) break;
+                        const key = queue.shift();
+                        const t = this.parseKey(key);
+                        const tPitches = this.getTriangleNodes(t).map(n => this.getNoteId(n)).sort((a,b)=>a-b).join(',');
+                        
+                        if (tPitches === targetStr) return t;
+                        
+                        this.getNeighbors(t).forEach(nb => {
+                            if (!visited.has(nb)) {
+                                visited.add(nb);
+                                queue.push(nb);
+                            }
+                        });
+                    }
+                    return null;
+                },
+                traceProgression() {
+                    if (!this.traceInput.trim()) return;
+                    const chords = this.traceInput.split(',').map(s => this.parseChordPitches(s));
+                    
+                    this.trajectoryKeys = new Set();
+                    let currentKey = '0_0_0';
+                    
+                    for (let target of chords) {
+                        if (target.includes('NaN')) continue;
+                        let found = this.findClosestTriangle(currentKey, target);
+                        if (found) {
+                            this.trajectoryKeys.add(found.key);
+                            this.revealedKeys.add(found.key);
+                            currentKey = found.key;
+                        } else {
+                            alert("Could not find chord: " + target + " in this Tonnetz.");
+                            break;
+                        }
+                    }
+                    
+                    this.trajectoryKeys = new Set(this.trajectoryKeys);
+                    this.revealedKeys = new Set(this.revealedKeys);
+                    this.$forceUpdate();
+                },
+                clearTrace() {
+                    this.trajectoryKeys = new Set();
+                    this.traceInput = '';
                     this.$forceUpdate();
                 },
                 // Interaction
