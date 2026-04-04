@@ -379,9 +379,11 @@
             },
             methods: {
                 logicalToSvg(node) {
+                    const origX = node.x * X_STEP;
+                    const origY = node.y + node.x / 2;
                     return {
-                        x: (node.x * X_STEP * BASE_SIZE),
-                        y: (node.y + node.x / 2) * BASE_SIZE
+                        x: origY * BASE_SIZE,
+                        y: -origX * BASE_SIZE
                     };
                 },
                 getTriangleNodes(t) {
