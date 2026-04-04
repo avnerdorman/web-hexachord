@@ -221,6 +221,12 @@
 
     <div id="app">
         <svg :view-box.camel="viewBox" @mousedown="startPan" @mousemove="onPan" @mouseup="endPan" @mouseleave="endPan">
+            <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
+                    markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#323248" />
+                </marker>
+            </defs>
             <g :transform="`translate(${pan.x} ${pan.y}) scale(${zoom})`">
                 
                 <!-- Triangles -->
@@ -231,6 +237,12 @@
                         @click="reveal(t)"
                     />
                 </g>
+
+                <!-- Arrows -->
+                <line v-for="line in trajectoryLines" :key="'line-'+line.id"
+                    :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
+                    stroke="#323248" stroke-width="4" stroke-linecap="round" fill="none"
+                    marker-end="url(#arrow)" />
 
                 <!-- Nodes -->
                 <g v-for="node in visibleNodes" :key="node.key" class="node">
@@ -289,6 +301,7 @@
             data: {
                 revealedKeys: new Set(['0_0_0']), 
                 trajectoryKeys: new Set(),
+                trajectorySeq: [],
                 traceInput: '',
                 pan: { x: window.innerWidth / 2, y: (window.innerHeight - 80) / 2 },
                 zoom: 1,
@@ -336,6 +349,32 @@
                         });
                     });
                     return Array.from(nodes.values());
+                },
+                trajectoryLines() {
+                    const lines = [];
+                    if (!this.trajectorySeq) return lines;
+                    for (let i = 0; i < this.trajectorySeq.length - 1; i++) {
+                        const k1 = this.trajectorySeq[i];
+                        const k2 = this.trajectorySeq[i+1];
+                        
+                        const c1 = this.getCenter(this.parseKey(k1));
+                        const c2 = this.getCenter(this.parseKey(k2));
+
+                        const dx = c2.x - c1.x;
+                        const dy = c2.y - c1.y;
+                        const len = Math.sqrt(dx*dx + dy*dy);
+                        const padding = 15; // Shorten line slightly so arrowhead is visible
+                        
+                        if (len > padding) {
+                            lines.push({ 
+                                x1: c1.x, y1: c1.y, 
+                                x2: c2.x - (dx/len)*padding, 
+                                y2: c2.y - (dy/len)*padding, 
+                                id: i 
+                            });
+                        }
+                    }
+                    return lines;
                 }
             },
             methods: {
@@ -374,6 +413,13 @@
                     }
                     return `[${ints.join(', ')}]`;
                 },
+                getCenter(t) {
+                    const nodes = this.getTriangleNodes(t);
+                    return {
+                        x: (nodes[0].svg.x + nodes[1].svg.x + nodes[2].svg.x) / 3,
+                        y: (nodes[0].svg.y + nodes[1].svg.y + nodes[2].svg.y) / 3
+                    };
+                },
                 getTrianglePoints(t) {
                     return this.getTriangleNodes(t).map(n => `${n.svg.x},${n.svg.y}`).join(' ');
                 },
@@ -400,6 +446,8 @@
                 reset() {
                     this.revealedKeys = new Set(['0_0_0']);
                     this.revealedKeys = new Set(this.revealedKeys);
+                    this.trajectoryKeys = new Set();
+                    this.trajectorySeq = [];
                     this.pan = { x: this.width / 2, y: this.height / 2 };
                     this.zoom = 1;
                 },
@@ -446,14 +494,18 @@
                     const chords = this.traceInput.split(',').map(s => this.parseChordPitches(s));
                     
                     this.trajectoryKeys = new Set();
+                    this.trajectorySeq = ['0_0_0']; // Always start trace arrows from center
                     let currentKey = '0_0_0';
                     
                     for (let target of chords) {
                         if (target.includes('NaN')) continue;
                         let found = this.findClosestTriangle(currentKey, target);
                         if (found) {
-                            this.trajectoryKeys.add(found.key);
-                            this.revealedKeys.add(found.key);
+                            if (this.trajectorySeq[this.trajectorySeq.length - 1] !== found.key) {
+                                this.trajectoryKeys.add(found.key);
+                                this.revealedKeys.add(found.key);
+                                this.trajectorySeq.push(found.key);
+                            }
                             currentKey = found.key;
                         } else {
                             alert("Could not find chord: " + target + " in this Tonnetz.");
@@ -467,6 +519,7 @@
                 },
                 clearTrace() {
                     this.trajectoryKeys = new Set();
+                    this.trajectorySeq = [];
                     this.traceInput = '';
                     this.$forceUpdate();
                 },
