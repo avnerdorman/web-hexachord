@@ -496,14 +496,14 @@
                     const chords = this.traceInput.split(',').map(s => this.parseChordPitches(s));
                     
                     this.trajectoryKeys = new Set();
-                    this.trajectorySeq = ['0_0_0']; // Always start trace arrows from center
+                    this.trajectorySeq = []; // Initialize empty so the sequence starts precisely at the first parsed chord
                     let currentKey = '0_0_0';
                     
                     for (let target of chords) {
                         if (target.includes('NaN')) continue;
                         let found = this.findClosestTriangle(currentKey, target);
                         if (found) {
-                            if (this.trajectorySeq[this.trajectorySeq.length - 1] !== found.key) {
+                            if (this.trajectorySeq.length === 0 || this.trajectorySeq[this.trajectorySeq.length - 1] !== found.key) {
                                 this.trajectoryKeys.add(found.key);
                                 this.revealedKeys.add(found.key);
                                 this.trajectorySeq.push(found.key);
