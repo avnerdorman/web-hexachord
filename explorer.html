@@ -367,7 +367,22 @@
                 trajectoryLines() {
                     const lines = [];
                     if (!this.trajectorySeq) return lines;
+                    
                     const is037 = this.selectedIntervals[0] === 3 && this.selectedIntervals[1] === 4 && this.selectedIntervals[2] === 5;
+                    
+                    const getInt = (n_a, n_b) => {
+                        const p_a = this.getNoteId(n_a);
+                        const p_b = this.getNoteId(n_b);
+                        let diff = Math.abs(p_a - p_b);
+                        return Math.min(diff, 12 - diff);
+                    };
+
+                    const getBaseLabel = (diff) => {
+                        if (diff === this.selectedIntervals[0]) return is037 ? 'L' : 'j';
+                        if (diff === this.selectedIntervals[1]) return is037 ? 'R' : 'k';
+                        if (diff === this.selectedIntervals[2]) return is037 ? 'P' : 'l';
+                        return '';
+                    };
                     
                     for (let i = 0; i < this.trajectorySeq.length - 1; i++) {
                         const k1 = this.trajectorySeq[i];
@@ -384,26 +399,21 @@
                         const padding = 15; // Shorten line slightly so arrowhead is visible
                         
                         let label = '';
-                        let edgeIndex = -1;
-                        if (t1.type === 0) {
-                            if (t2.type === 1 && t2.x === t1.x + 1 && t2.y === t1.y - 1) edgeIndex = 1;
-                            else if (t2.type === 1 && t2.x === t1.x + 1 && t2.y === t1.y) edgeIndex = 0;
-                            else if (t2.type === 1 && t2.x === t1.x && t2.y === t1.y) edgeIndex = 2;
-                        } else {
-                            if (t2.type === 0 && t2.x === t1.x - 1 && t2.y === t1.y + 1) edgeIndex = 1;
-                            else if (t2.type === 0 && t2.x === t1.x - 1 && t2.y === t1.y) edgeIndex = 0;
-                            else if (t2.type === 0 && t2.x === t1.x && t2.y === t1.y) edgeIndex = 2;
-                        }
+                        if (t1.type !== t2.type) {
+                            const nodes1 = this.getTriangleNodes(t1);
+                            const nodes2 = this.getTriangleNodes(t2);
+                            const keys2 = new Set(nodes2.map(n => n.key));
+                            const sharedNodes = nodes1.filter(n => keys2.has(n.key));
+                            const unsharedNodes1 = nodes1.filter(n => !keys2.has(n.key));
 
-                        if (edgeIndex !== -1) {
-                            if (is037) {
-                                if (edgeIndex === 0) label = 'L';
-                                if (edgeIndex === 1) label = 'R';
-                                if (edgeIndex === 2) label = 'P';
-                            } else {
-                                if (edgeIndex === 0) label = 'j';
-                                if (edgeIndex === 1) label = 'k';
-                                if (edgeIndex === 2) label = 'l';
+                            if (sharedNodes.length === 2) {
+                                // 2 vertices shared = Edge crossing (P, L, R)
+                                label = getBaseLabel(getInt(sharedNodes[0], sharedNodes[1]));
+                            } else if (sharedNodes.length === 1 && unsharedNodes1.length === 2) {
+                                // 1 vertex shared = Vertex crossing (P', L', R')
+                                // It maps to the transformation of the edge OPPOSITE the shared vertex
+                                const base = getBaseLabel(getInt(unsharedNodes1[0], unsharedNodes1[1]));
+                                if (base) label = base + "'";
                             }
                         }
 
