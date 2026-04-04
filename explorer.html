@@ -247,7 +247,9 @@
                 <!-- Nodes -->
                 <g v-for="node in visibleNodes" :key="node.key" class="node">
                     <circle :cx="node.svg.x" :cy="node.svg.y" r="18" :class="'color-' + getNoteId(node)"></circle>
-                    <text :x="node.svg.x" :y="node.svg.y" style="fill: white;">{{ getNoteName(node) }}</text>
+                    <text :x="node.svg.x" :y="node.svg.y" style="fill: white;">
+                        {{ showPitchClasses ? getNoteId(node) : getNoteName(node) }}
+                    </text>
                 </g>
 
             </g>
@@ -266,12 +268,15 @@
 
         <div class="controls-wrap">
             <div class="controls">
-                <input v-model="traceInput" placeholder="Trace progression (e.g. C, Am, F...)" @keyup.enter="traceProgression" />
+                <input v-model="traceInput" placeholder="Progression (e.g. C+ A- F+)" @keyup.enter="traceProgression" />
                 <button @click="traceProgression">Trace</button>
                 <button @click="clearTrace" v-if="trajectoryKeys.size > 0">Clear</button>
             </div>
             
             <div class="controls">
+                <label style="display:flex; align-items:center; gap:5px; font-size:13px; font-weight:600; cursor:pointer;">
+                    <input type="checkbox" v-model="showPitchClasses" /> Numbers
+                </label>
                 <select v-model="selectedIntervals" @change="reset">
                     <option v-for="(ints, index) in allIntervals" :value="ints" :key="index">
                         {{ getLabelForIntervals(ints) }}
@@ -303,6 +308,7 @@
                 trajectoryKeys: new Set(),
                 trajectorySeq: [],
                 traceInput: '',
+                showPitchClasses: false,
                 pan: { x: window.innerWidth / 2, y: (window.innerHeight - 80) / 2 },
                 zoom: 1,
                 lastMouse: { x: 0, y: 0 },
@@ -461,11 +467,12 @@
                 },
                 parseChordPitches(str) {
                     const rootMap = {"C":0, "C#":1, "DB":1, "D":2, "D#":3, "EB":3, "E":4, "F":5, "F#":6, "GB":6, "G":7, "G#":8, "AB":8, "A":9, "A#":10, "BB":10, "B":11};
-                    const match = str.trim().match(/^([A-G][b#]?)(m|M|min|maj)?$/i);
+                    const match = str.trim().match(/^([A-G][b#]?)(m|M|min|maj|\+|\-)?$/i);
                     if (match) {
                         let rId = rootMap[match[1].toUpperCase()];
                         if (rId !== undefined) {
-                            let isMinor = (match[2] || '').toLowerCase().startsWith('m') && (match[2] || '').toLowerCase() !== 'maj';
+                            const qual = (match[2] || '').toLowerCase();
+                            let isMinor = (qual.startsWith('m') && qual !== 'maj') || qual === '-';
                             return [rId, (rId + (isMinor ? 3 : 4)) % 12, (rId + 7) % 12].sort((a,b)=>a-b).join(',');
                         }
                     }
@@ -493,7 +500,8 @@
                 },
                 traceProgression() {
                     if (!this.traceInput.trim()) return;
-                    const chords = this.traceInput.split(',').map(s => this.parseChordPitches(s));
+                    let tokens = this.traceInput.includes(',') ? this.traceInput.split(',') : this.traceInput.trim().split(/\s+/);
+                    const chords = tokens.map(s => this.parseChordPitches(s));
                     
                     this.trajectoryKeys = new Set();
                     this.trajectorySeq = []; // Initialize empty so the sequence starts precisely at the first parsed chord
