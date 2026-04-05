@@ -374,27 +374,27 @@
                     const s = this.selectedIntervals;
                     return (s[0] === 3 && s[1] === 4 && s[2] === 5)
                         ? 'e.g. C+ Am F G  or  C+ P L R'
-                        : 'e.g. 0 4 7 J K  or  0,4,7,2,5,9';
+                        : 'e.g. C+ J K  or  0 4 7 J K';
                 },
                 trajectoryLines() {
                     const lines = [];
                     if (!this.trajectorySeq) return lines;
-                    
-                    const getInt = (n_a, n_b) => {
-                        const p_a = this.getNoteId(n_a);
-                        const p_b = this.getNoteId(n_b);
-                        let diff = Math.abs(p_a - p_b);
-                        return Math.min(diff, 12 - diff);
-                    };
 
+                    // Neighbor index → label mapping (same for both up and down triangles):
+                    // index 0 → intervals[1] edge → R (triadic) / L (non-triadic)
+                    // index 1 → intervals[0] edge → L (triadic) / K (non-triadic)
+                    // index 2 → intervals[2] edge → P (triadic) / J (non-triadic)
                     const is345 = this.selectedIntervals[0] === 3 && this.selectedIntervals[1] === 4 && this.selectedIntervals[2] === 5;
-                    const getBaseLabel = (diff) => {
-                        if (diff === this.selectedIntervals[0]) return is345 ? 'L' : 'K';
-                        if (diff === this.selectedIntervals[1]) return is345 ? 'R' : 'L';
-                        if (diff === this.selectedIntervals[2]) return is345 ? 'P' : 'J';
+                    const LABELS = is345 ? ['R', 'L', 'P'] : ['L', 'K', 'J'];
+                    const getLabelByEdgeNodes = (t, nodeA, nodeB) => {
+                        const neighbors = this.getNeighbors(t);
+                        for (let idx = 0; idx < neighbors.length; idx++) {
+                            const nbNodeKeys = this.getTriangleNodes(this.parseKey(neighbors[idx])).map(n => n.key);
+                            if (nbNodeKeys.includes(nodeA.key) && nbNodeKeys.includes(nodeB.key)) return LABELS[idx];
+                        }
                         return '';
                     };
-                    
+
                     for (let i = 0; i < this.trajectorySeq.length - 1; i++) {
                         const k1 = this.trajectorySeq[i];
                         const k2 = this.trajectorySeq[i+1];
@@ -418,12 +418,13 @@
                             const unsharedNodes1 = nodes1.filter(n => !keys2.has(n.key));
 
                             if (sharedNodes.length === 2) {
-                                // 2 vertices shared = Edge crossing (P, L, R)
-                                label = getBaseLabel(getInt(sharedNodes[0], sharedNodes[1]));
+                                // 2 vertices shared = direct neighbor (edge crossing)
+                                const neighbors1 = this.getNeighbors(t1);
+                                const idx = neighbors1.indexOf(t2.key);
+                                if (idx >= 0) label = LABELS[idx];
                             } else if (sharedNodes.length === 1 && unsharedNodes1.length === 2) {
-                                // 1 vertex shared = Vertex crossing (P', L', R')
-                                // It maps to the transformation of the edge OPPOSITE the shared vertex
-                                const base = getBaseLabel(getInt(unsharedNodes1[0], unsharedNodes1[1]));
+                                // 1 vertex shared = vertex crossing; label = transformation of opposite edge
+                                const base = getLabelByEdgeNodes(t1, unsharedNodes1[0], unsharedNodes1[1]);
                                 if (base) label = base + "'";
                             }
                         }
@@ -576,28 +577,12 @@
                     const is345 = this.selectedIntervals[0] === 3 && this.selectedIntervals[1] === 4 && this.selectedIntervals[2] === 5;
                     const transformSet = is345 ? new Set(['p', 'l', 'r']) : new Set(['j', 'k', 'l']);
 
-                    const getIntIC = (n_a, n_b) => {
-                        const diff = Math.abs(this.getNoteId(n_a) - this.getNoteId(n_b));
-                        return Math.min(diff, 12 - diff);
-                    };
-                    const edgeLabel = (diff) => {
-                        if (diff === this.selectedIntervals[0]) return is345 ? 'l' : 'k';
-                        if (diff === this.selectedIntervals[1]) return is345 ? 'r' : 'l';
-                        if (diff === this.selectedIntervals[2]) return is345 ? 'p' : 'j';
-                        return '';
-                    };
+                    // index 0 → R/L, index 1 → L/K, index 2 → P/J
+                    const LOWER_LABELS = is345 ? ['r', 'l', 'p'] : ['l', 'k', 'j'];
                     const applyTransform = (fromKey, targetLabel) => {
-                        const t1 = this.parseKey(fromKey);
-                        for (const nbKey of this.getNeighbors(t1)) {
-                            const t2 = this.parseKey(nbKey);
-                            const nodes1 = this.getTriangleNodes(t1);
-                            const keys2 = new Set(this.getTriangleNodes(t2).map(n => n.key));
-                            const shared = nodes1.filter(n => keys2.has(n.key));
-                            if (shared.length === 2 && edgeLabel(getIntIC(shared[0], shared[1])) === targetLabel) {
-                                return nbKey;
-                            }
-                        }
-                        return null;
+                        const neighbors = this.getNeighbors(this.parseKey(fromKey));
+                        const idx = LOWER_LABELS.indexOf(targetLabel);
+                        return idx >= 0 ? neighbors[idx] : null;
                     };
 
                     const tokens = this.traceInput.includes(',')
