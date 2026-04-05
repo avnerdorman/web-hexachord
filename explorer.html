@@ -332,7 +332,6 @@
                 </select>
                 <button @click="reset">Reset Space</button>
                 <button @click="autoExpand">Grow 1 Step</button>
-                <button @click="expandFull">Expand Full</button>
             </div>
         </div>
     </div>
@@ -667,25 +666,6 @@
                     const currentPlaceholders = [...this.placeholderTriangles];
                     currentPlaceholders.forEach(t => this.revealedKeys.add(t.key));
                     this.revealedKeys = new Set(this.revealedKeys);
-                    this.$forceUpdate();
-                },
-                expandFull() {
-                    // Work on a plain Set directly, bypassing Vue reactivity mid-loop
-                    const revealed = new Set(this.revealedKeys);
-                    let safety = 0;
-                    let added = 1;
-                    while (added > 0 && safety++ < 500) {
-                        added = 0;
-                        for (const key of [...revealed]) {
-                            for (const nbKey of this.getNeighbors(this.parseKey(key))) {
-                                if (!revealed.has(nbKey)) {
-                                    revealed.add(nbKey);
-                                    added++;
-                                }
-                            }
-                        }
-                    }
-                    this.revealedKeys = revealed;
                     this.$forceUpdate();
                 },
                 parseChordPitches(str) {
