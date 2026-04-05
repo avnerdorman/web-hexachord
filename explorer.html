@@ -204,6 +204,30 @@
         .color-10 { fill: #76a90d !important; stroke: #76a90d !important; }
         .color-11 { fill: #e6bd00 !important; stroke: #e6bd00 !important; }
 
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            font-size: 13px;
+            font-weight: 600;
+            background: #f0f0f0;
+            border-radius: 20px;
+            padding: 2px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle-switch span {
+            padding: 5px 12px;
+            border-radius: 16px;
+            transition: background 0.2s, color 0.2s;
+            color: #888;
+            white-space: nowrap;
+        }
+        .toggle-switch span.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
         .revealed-text {
             fill: #323248;
             font-size: 14px;
@@ -293,12 +317,14 @@
             <div v-if="traceError" style="text-align:center; color:red; font-size:12px; font-weight:600;">{{ traceError }}</div>
             
             <div class="controls">
-                <label style="display:flex; align-items:center; gap:5px; font-size:13px; font-weight:600; cursor:pointer;">
-                    <input type="checkbox" v-model="showPitchClasses" /> Numbers
-                </label>
-                <label style="display:flex; align-items:center; gap:5px; font-size:13px; font-weight:600; cursor:pointer;">
-                    <input type="checkbox" v-model="audioEnabled" /> Audio
-                </label>
+                <div class="toggle-switch" @click="audioEnabled = !audioEnabled">
+                    <span :class="{ active: !audioEnabled }">Explore</span>
+                    <span :class="{ active: audioEnabled }">Listen</span>
+                </div>
+                <div class="toggle-switch" @click="showPitchClasses = !showPitchClasses">
+                    <span :class="{ active: !showPitchClasses }">Pitch names</span>
+                    <span :class="{ active: showPitchClasses }">Pitch classes</span>
+                </div>
                 <select v-model="selectedIntervals" @change="reset">
                     <option v-for="(ints, index) in allIntervals" :value="ints" :key="index">
                         {{ getLabelForIntervals(ints) }}
