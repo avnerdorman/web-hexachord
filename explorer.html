@@ -347,7 +347,7 @@
             <div class="clock-wrap">
                 <span>Chromatic</span>
                 <svg width="140" height="140">
-                    <polygon v-if="activePitches.size > 1"
+                    <polygon v-if="activePitchArray.length > 1"
                         :points="clockPolygonPoints(1)"
                         fill="rgba(50,50,72,0.15)" stroke="#323248" stroke-width="1.5" />
                     <g v-for="pc in 12" :key="'chr-'+pc">
@@ -356,14 +356,14 @@
                             :cy="clockPosition(pc-1, 1, 70, 70, 52).y"
                             r="13"
                             :class="'color-'+(pc-1)"
-                            :opacity="activePitches.has(pc-1) ? 1 : 0.22"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.22"
                         />
                         <text
                             :x="clockPosition(pc-1, 1, 70, 70, 52).x"
                             :y="clockPosition(pc-1, 1, 70, 70, 52).y"
                             font-size="9" font-weight="700" fill="white"
                             text-anchor="middle" dominant-baseline="central"
-                            :opacity="activePitches.has(pc-1) ? 1 : 0.5"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.5"
                         >{{ showPitchClasses ? (pc-1) : noteNames[pc-1] }}</text>
                     </g>
                 </svg>
@@ -371,7 +371,7 @@
             <div class="clock-wrap">
                 <span>Circle of Fifths</span>
                 <svg width="140" height="140">
-                    <polygon v-if="activePitches.size > 1"
+                    <polygon v-if="activePitchArray.length > 1"
                         :points="clockPolygonPoints(7)"
                         fill="rgba(50,50,72,0.15)" stroke="#323248" stroke-width="1.5" />
                     <g v-for="pc in 12" :key="'fif-'+pc">
@@ -380,14 +380,14 @@
                             :cy="clockPosition(pc-1, 7, 70, 70, 52).y"
                             r="13"
                             :class="'color-'+(pc-1)"
-                            :opacity="activePitches.has(pc-1) ? 1 : 0.22"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.22"
                         />
                         <text
                             :x="clockPosition(pc-1, 7, 70, 70, 52).x"
                             :y="clockPosition(pc-1, 7, 70, 70, 52).y"
                             font-size="9" font-weight="700" fill="white"
                             text-anchor="middle" dominant-baseline="central"
-                            :opacity="activePitches.has(pc-1) ? 1 : 0.5"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.5"
                         >{{ showPitchClasses ? (pc-1) : noteNames[pc-1] }}</text>
                     </g>
                 </svg>
@@ -589,6 +589,7 @@
             computed: {
                 viewBox() { return `0 0 ${this.width} ${this.height}`; },
                 playheadKey() { return this.trajectorySeq[this.playhead] || null; },
+                activePitchArray() { return Array.from(this.activePitches); },
                 revealedTriangles() {
                     return Array.from(this.revealedKeys).map(key => this.parseKey(key));
                 },
@@ -947,7 +948,7 @@
                     return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
                 },
                 clockPolygonPoints(clockType) {
-                    return Array.from(this.activePitches)
+                    return this.activePitchArray
                         .map(pc => {
                             const p = this.clockPosition(pc, clockType, 70, 70, 52);
                             return `${p.x},${p.y}`;
