@@ -238,18 +238,12 @@
                     />
                 </g>
 
-                <!-- Arrows -->
+                <!-- Arrow lines (behind nodes) -->
                 <g v-for="line in trajectoryLines" :key="'arrow-'+line.id">
                     <line 
                         :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
                         stroke="#323248" stroke-width="4" stroke-linecap="round" fill="none"
                         marker-end="url(#arrow)" />
-                    <template v-if="line.label">
-                        <circle :cx="line.midX" :cy="line.midY" r="9" fill="white" stroke="#323248" stroke-width="1.5" />
-                        <text :x="line.midX" :y="line.midY" font-size="11" font-weight="700" fill="#323248" text-anchor="middle" dominant-baseline="central">
-                            {{ line.label }}
-                        </text>
-                    </template>
                 </g>
 
                 <!-- Nodes -->
@@ -258,6 +252,16 @@
                     <text :x="node.svg.x" :y="node.svg.y" style="fill: white;">
                         {{ showPitchClasses ? getNoteId(node) : getNoteName(node) }}
                     </text>
+                </g>
+
+                <!-- Arrow labels (in front of nodes) -->
+                <g v-for="line in trajectoryLines" :key="'label-'+line.id">
+                    <template v-if="line.label">
+                        <circle :cx="line.midX" :cy="line.midY" r="9" fill="white" stroke="#323248" stroke-width="1.5" />
+                        <text :x="line.midX" :y="line.midY" font-size="11" font-weight="700" fill="#323248" text-anchor="middle" dominant-baseline="central">
+                            {{ line.label }}
+                        </text>
+                    </template>
                 </g>
 
             </g>
