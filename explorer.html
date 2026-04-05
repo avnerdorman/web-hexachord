@@ -332,6 +332,7 @@
                 </select>
                 <button @click="reset">Reset Space</button>
                 <button @click="autoExpand">Grow 1 Step</button>
+                <button @click="autoExpandN(10)">Grow 10 Steps</button>
             </div>
         </div>
     </div>
@@ -661,6 +662,9 @@
                     this.trajectorySeq = [];
                     this.pan = { x: this.width / 2, y: this.height / 2 };
                     this.zoom = 1;
+                },
+                autoExpandN(n) {
+                    for (let i = 0; i < n; i++) this.autoExpand();
                 },
                 autoExpand() {
                     const currentPlaceholders = [...this.placeholderTriangles];
