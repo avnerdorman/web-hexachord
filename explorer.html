@@ -332,6 +332,7 @@
                 </select>
                 <button @click="reset">Reset Space</button>
                 <button @click="autoExpand">Grow 1 Step</button>
+                <button @click="expandFull">Expand Full</button>
             </div>
         </div>
     </div>
@@ -665,6 +666,14 @@
                 autoExpand() {
                     const currentPlaceholders = [...this.placeholderTriangles];
                     currentPlaceholders.forEach(t => this.revealedKeys.add(t.key));
+                    this.revealedKeys = new Set(this.revealedKeys);
+                    this.$forceUpdate();
+                },
+                expandFull() {
+                    let safety = 0;
+                    while (this.placeholderTriangles.length > 0 && safety++ < 500) {
+                        this.placeholderTriangles.forEach(t => this.revealedKeys.add(t.key));
+                    }
                     this.revealedKeys = new Set(this.revealedKeys);
                     this.$forceUpdate();
                 },
