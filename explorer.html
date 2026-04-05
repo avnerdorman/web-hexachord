@@ -275,7 +275,7 @@
                 <!-- Nodes -->
                 <g v-for="node in visibleNodes" :key="node.key" class="node">
                     <circle :cx="node.svg.x" :cy="node.svg.y" r="18" :class="'color-' + getNoteId(node)"
-                        @pointerdown="audioEnabled && audioNoteOn('node_'+node.key, [getNoteId(node)])"
+                        @pointerdown="audioEnabled && audioNoteOn('node_'+node.key, [getNoteId(node)], [node])"
                         @pointerup="audioEnabled && audioNoteOff('node_'+node.key)"
                         @pointerleave="audioEnabled && audioNoteOff('node_'+node.key)"
                     ></circle>
@@ -358,21 +358,48 @@
             return _audioCtx;
         }
 
-        function noteIdToFreq(noteId) {
-            // Place pitch class in octave around C4 (MIDI 60)
-            return 440 * Math.pow(2, (60 + noteId - 69) / 12);
+        function midiToFreq(midi) {
+            return 440 * Math.pow(2, (midi - 69) / 12);
         }
 
-        function audioNoteOn(key, noteIds) {
+        // Maps a grid node {x,y} to a MIDI pitch voiced around C4 (MIDI 60).
+        // Adapted from tonnetzLike.js nodesToPitches, re-anchored from 81 → 60.
+        function nodeToMidi(node, intervals) {
+            const raw = 60 - node.x * intervals[0] + node.y * (intervals[2] - 12);
+            // Keep the note at or above its pitch class (prevents negative MIDI values)
+            const pc = ((raw % 12) + 12) % 12;
+            return Math.max(raw, pc);
+        }
+
+        // Returns the MIDI pitch for a pitch class placed in octave 2 (C2=36 … B2=47).
+        function bassOctaveMidi(pc) {
+            return 36 + pc;
+        }
+
+        // noteIds: array of pitch-class ints (for single-note node playback)
+        // nodes:   array of {x,y,key} with grid coords (for voiced chord playback)
+        // intervals: the active interval set (needed for voicing)
+        function audioNoteOn(key, noteIds, nodes, intervals) {
             const ctx = getAudioCtx();
             ctx.resume();
+
+            const midiPitches = nodes && intervals
+                ? nodes.map(n => nodeToMidi(n, intervals))
+                : noteIds.map(pc => 60 + pc); // fallback: flat octave around C4
+
+            // Bass: lowest pitch class among the notes, one octave lower (octave 2)
+            const bassPC = noteIds ? Math.min(...noteIds) : ((midiPitches[0] % 12 + 12) % 12);
+            const bassMidi = bassOctaveMidi(bassPC);
+
+            const allMidi = [bassMidi, ...midiPitches];
             const gain = ctx.createGain();
-            gain.gain.setValueAtTime(0.3 / noteIds.length, ctx.currentTime);
+            gain.gain.setValueAtTime(0.25 / allMidi.length, ctx.currentTime);
             gain.connect(ctx.destination);
-            const oscillators = noteIds.map(id => {
+
+            const oscillators = allMidi.map((midi, i) => {
                 const osc = ctx.createOscillator();
-                osc.type = 'triangle';
-                osc.frequency.value = noteIdToFreq(id);
+                osc.type = i === 0 ? 'sine' : 'triangle'; // bass gets sine, upper voices get triangle
+                osc.frequency.value = midiToFreq(midi);
                 osc.connect(gain);
                 osc.start();
                 return osc;
@@ -391,9 +418,9 @@
             delete activeAudioNodes[key];
         }
 
-        function audioPlayChord(noteIds, durationMs) {
+        function audioPlayChord(noteIds, nodes, intervals, durationMs) {
             const key = '__chord__' + Date.now();
-            audioNoteOn(key, noteIds);
+            audioNoteOn(key, noteIds, nodes, intervals);
             setTimeout(() => audioNoteOff(key), durationMs);
         }
 
@@ -726,15 +753,16 @@
                     this.$forceUpdate();
                 },
                 // Audio bridge (expose module-level functions to template)
-                audioNoteOn(key, noteIds) { audioNoteOn(key, noteIds); },
+                audioNoteOn(key, noteIds, nodes) { audioNoteOn(key, noteIds, nodes, this.selectedIntervals); },
                 audioNoteOff(key) { audioNoteOff(key); },
                 // Triangle pointer events
                 onTrianglePointerDown(t) {
                     if (!t.revealed) {
                         this.reveal(t);
                     } else if (this.audioEnabled) {
-                        const noteIds = this.getTriangleNodes(t).map(n => this.getNoteId(n));
-                        audioNoteOn('tri_' + t.key, noteIds);
+                        const tNodes = this.getTriangleNodes(t);
+                        const noteIds = tNodes.map(n => this.getNoteId(n));
+                        audioNoteOn('tri_' + t.key, noteIds, tNodes, this.selectedIntervals);
                     }
                 },
                 onTrianglePointerUp(t) {
