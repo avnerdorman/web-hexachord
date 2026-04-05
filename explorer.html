@@ -387,8 +387,8 @@
                 ? nodes.map(n => nodeToMidi(n, intervals))
                 : noteIds.map(pc => 60 + pc); // fallback: flat octave around C4
 
-            // Bass: lowest pitch class among the notes, one octave lower (octave 2)
-            const bassPC = noteIds ? Math.min(...noteIds) : ((midiPitches[0] % 12 + 12) % 12);
+            // Bass: first note id is the root node of the triangle (index 0 of getTriangleNodes)
+            const bassPC = noteIds ? noteIds[0] : ((midiPitches[0] % 12 + 12) % 12);
             const bassMidi = bassOctaveMidi(bassPC);
 
             const allMidi = [bassMidi, ...midiPitches];
