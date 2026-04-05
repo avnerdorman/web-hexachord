@@ -88,6 +88,13 @@
             opacity: 1;
         }
 
+        .trichord.playhead {
+            fill: gold;
+            stroke: #b8860b;
+            stroke-width: 3;
+            opacity: 1;
+        }
+
         @keyframes growIn {
             from { transform: scale(0); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
@@ -156,6 +163,7 @@
             transform: translateY(-2px);
         }
         button:active { transform: translateY(0); }
+        button:disabled { opacity: 0.4; cursor: default; transform: none; background: var(--primary-color); }
 
         .zoom-control {
             position: fixed;
@@ -257,7 +265,7 @@
                 <g v-for="t in allTriangles" :key="t.key">
                     <polygon
                         :points="getTrianglePoints(t)"
-                        :class="['trichord', t.revealed ? 'revealed' : 'placeholder', trajectoryKeys.has(t.key) ? 'trajectory' : '']"
+                        :class="['trichord', t.revealed ? 'revealed' : 'placeholder', trajectoryKeys.has(t.key) ? 'trajectory' : '', playheadKey === t.key ? 'playhead' : '']"
                         @pointerdown="onTrianglePointerDown(t)"
                         @pointerup="onTrianglePointerUp(t)"
                         @pointerleave="onTrianglePointerUp(t)"
@@ -315,7 +323,16 @@
                 <button @click="clearTrace" v-if="trajectoryKeys.size > 0">Clear</button>
             </div>
             <div v-if="traceError" style="text-align:center; color:red; font-size:12px; font-weight:600;">{{ traceError }}</div>
-            
+
+            <div v-if="trajectorySeq.length > 0" class="controls">
+                <button @click="playTrajectory" :disabled="isPlaying">&#9654; Play</button>
+                <button @click="pauseTrajectory" :disabled="!isPlaying">&#9646;&#9646; Pause</button>
+                <button @click="stopTrajectory">&#9632; Stop</button>
+                <label style="font-size:13px;font-weight:600;">BPM
+                    <input type="number" v-model.number="bpm" min="20" max="240" style="width:60px;margin-left:5px;padding:4px 8px;" />
+                </label>
+            </div>
+
             <div class="controls">
                 <div class="toggle-switch" @click="audioEnabled = !audioEnabled">
                     <span :class="{ active: !audioEnabled }">Explore</span>
@@ -474,7 +491,11 @@
                 height: window.innerHeight - 80,
                 allIntervals: ALL_INTERVALS,
                 selectedIntervals: ALL_INTERVALS.find(i => i[0]===3 && i[1]===4 && i[2]===5),
-                setClasses: [] // Populated asynchronously 
+                setClasses: [], // Populated asynchronously
+                playhead: -1,
+                isPlaying: false,
+                bpm: 60,
+                playTimer: null
             },
             created() {
                 // Fetch set-class data from the user's repository
@@ -487,6 +508,7 @@
             },
             computed: {
                 viewBox() { return `0 0 ${this.width} ${this.height}`; },
+                playheadKey() { return this.trajectorySeq[this.playhead] || null; },
                 revealedTriangles() {
                     return Array.from(this.revealedKeys).map(key => this.parseKey(key));
                 },
@@ -656,6 +678,7 @@
                 },
                 getNoteName(node) { return NOTE_NAMES[this.getNoteId(node)]; },
                 reset() {
+                    this.stopTrajectory();
                     this.revealedKeys = new Set(['0_0_0']);
                     this.revealedKeys = new Set(this.revealedKeys);
                     this.trajectoryKeys = new Set();
@@ -782,10 +805,52 @@
                     this.$forceUpdate();
                 },
                 clearTrace() {
+                    this.stopTrajectory();
                     this.trajectoryKeys = new Set();
                     this.trajectorySeq = [];
                     this.traceInput = '';
                     this.$forceUpdate();
+                },
+                playTrajectory() {
+                    if (this.isPlaying || this.trajectorySeq.length === 0) return;
+                    if (this.playhead < 0 || this.playhead >= this.trajectorySeq.length - 1) {
+                        this.playhead = 0;
+                    } else {
+                        this.playhead++;
+                    }
+                    this.audioEnabled = true;
+                    this.isPlaying = true;
+                    // Resume AudioContext during this user gesture so the first chord isn't silenced
+                    const ctx = getAudioCtx();
+                    ctx.resume().then(() => this.playStep());
+                },
+                playStep() {
+                    if (!this.isPlaying) return;
+                    const ms = Math.round(60000 / this.bpm);
+                    const key = this.trajectorySeq[this.playhead];
+                    if (this.audioEnabled && key) {
+                        const t = this.parseKey(key);
+                        const tNodes = this.getTriangleNodes(t);
+                        const noteIds = tNodes.map(n => this.getNoteId(n));
+                        audioPlayChord(noteIds, tNodes, this.selectedIntervals, ms * 0.9);
+                    }
+                    if (this.playhead >= this.trajectorySeq.length - 1) {
+                        this.isPlaying = false;
+                        return;
+                    }
+                    this.playTimer = setTimeout(() => {
+                        this.playhead++;
+                        this.playStep();
+                    }, ms);
+                },
+                pauseTrajectory() {
+                    this.isPlaying = false;
+                    if (this.playTimer) { clearTimeout(this.playTimer); this.playTimer = null; }
+                },
+                stopTrajectory() {
+                    this.isPlaying = false;
+                    if (this.playTimer) { clearTimeout(this.playTimer); this.playTimer = null; }
+                    this.playhead = -1;
                 },
                 // Audio bridge (expose module-level functions to template)
                 audioNoteOn(key, noteIds, nodes) { audioNoteOn(key, noteIds, nodes, this.selectedIntervals); },
