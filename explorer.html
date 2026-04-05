@@ -231,10 +231,12 @@
                 
                 <!-- Triangles -->
                 <g v-for="t in allTriangles" :key="t.key">
-                    <polygon 
+                    <polygon
                         :points="getTrianglePoints(t)"
                         :class="['trichord', t.revealed ? 'revealed' : 'placeholder', trajectoryKeys.has(t.key) ? 'trajectory' : '']"
-                        @click="reveal(t)"
+                        @pointerdown="onTrianglePointerDown(t)"
+                        @pointerup="onTrianglePointerUp(t)"
+                        @pointerleave="onTrianglePointerUp(t)"
                     />
                 </g>
 
@@ -248,7 +250,11 @@
 
                 <!-- Nodes -->
                 <g v-for="node in visibleNodes" :key="node.key" class="node">
-                    <circle :cx="node.svg.x" :cy="node.svg.y" r="18" :class="'color-' + getNoteId(node)"></circle>
+                    <circle :cx="node.svg.x" :cy="node.svg.y" r="18" :class="'color-' + getNoteId(node)"
+                        @pointerdown="audioEnabled && audioNoteOn('node_'+node.key, [getNoteId(node)])"
+                        @pointerup="audioEnabled && audioNoteOff('node_'+node.key)"
+                        @pointerleave="audioEnabled && audioNoteOff('node_'+node.key)"
+                    ></circle>
                     <text :x="node.svg.x" :y="node.svg.y" style="fill: white;">
                         {{ showPitchClasses ? getNoteId(node) : getNoteName(node) }}
                     </text>
@@ -290,6 +296,9 @@
                 <label style="display:flex; align-items:center; gap:5px; font-size:13px; font-weight:600; cursor:pointer;">
                     <input type="checkbox" v-model="showPitchClasses" /> Numbers
                 </label>
+                <label style="display:flex; align-items:center; gap:5px; font-size:13px; font-weight:600; cursor:pointer;">
+                    <input type="checkbox" v-model="audioEnabled" /> Audio
+                </label>
                 <select v-model="selectedIntervals" @change="reset">
                     <option v-for="(ints, index) in allIntervals" :value="ints" :key="index">
                         {{ getLabelForIntervals(ints) }}
@@ -314,6 +323,54 @@
             [4, 4, 4]
         ];
 
+        // --- Audio engine ---
+        let _audioCtx = null;
+        const activeAudioNodes = {};
+
+        function getAudioCtx() {
+            if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            return _audioCtx;
+        }
+
+        function noteIdToFreq(noteId) {
+            // Place pitch class in octave around C4 (MIDI 60)
+            return 440 * Math.pow(2, (60 + noteId - 69) / 12);
+        }
+
+        function audioNoteOn(key, noteIds) {
+            const ctx = getAudioCtx();
+            ctx.resume();
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.3 / noteIds.length, ctx.currentTime);
+            gain.connect(ctx.destination);
+            const oscillators = noteIds.map(id => {
+                const osc = ctx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = noteIdToFreq(id);
+                osc.connect(gain);
+                osc.start();
+                return osc;
+            });
+            activeAudioNodes[key] = { oscillators, gain };
+        }
+
+        function audioNoteOff(key) {
+            const node = activeAudioNodes[key];
+            if (!node) return;
+            const ctx = getAudioCtx();
+            const { gain, oscillators } = node;
+            gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+            oscillators.forEach(osc => osc.stop(ctx.currentTime + 0.25));
+            delete activeAudioNodes[key];
+        }
+
+        function audioPlayChord(noteIds, durationMs) {
+            const key = '__chord__' + Date.now();
+            audioNoteOn(key, noteIds);
+            setTimeout(() => audioNoteOff(key), durationMs);
+        }
+
         new Vue({
             el: '#app',
             data: {
@@ -323,6 +380,7 @@
                 traceInput: '',
                 traceError: '',
                 showPitchClasses: false,
+                audioEnabled: false,
                 pan: { x: window.innerWidth / 2, y: (window.innerHeight - 80) / 2 },
                 zoom: 1,
                 lastMouse: { x: 0, y: 0 },
@@ -640,6 +698,21 @@
                     this.trajectorySeq = [];
                     this.traceInput = '';
                     this.$forceUpdate();
+                },
+                // Audio bridge (expose module-level functions to template)
+                audioNoteOn(key, noteIds) { audioNoteOn(key, noteIds); },
+                audioNoteOff(key) { audioNoteOff(key); },
+                // Triangle pointer events
+                onTrianglePointerDown(t) {
+                    if (!t.revealed) {
+                        this.reveal(t);
+                    } else if (this.audioEnabled) {
+                        const noteIds = this.getTriangleNodes(t).map(n => this.getNoteId(n));
+                        audioNoteOn('tri_' + t.key, noteIds);
+                    }
+                },
+                onTrianglePointerUp(t) {
+                    if (this.audioEnabled) audioNoteOff('tri_' + t.key);
                 },
                 // Interaction
                 startPan(e) {
