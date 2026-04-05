@@ -242,6 +242,30 @@
             font-weight: 600;
             pointer-events: none;
         }
+
+        .clock-panel {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+        .clock-wrap {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #888;
+        }
     </style>
 </head>
 <body>
@@ -283,9 +307,9 @@
                 <!-- Nodes -->
                 <g v-for="node in visibleNodes" :key="node.key" class="node">
                     <circle :cx="node.svg.x" :cy="node.svg.y" r="18" :class="'color-' + getNoteId(node)"
-                        @pointerdown="audioEnabled && audioNoteOn('node_'+node.key, [getNoteId(node)], [node])"
-                        @pointerup="audioEnabled && audioNoteOff('node_'+node.key)"
-                        @pointerleave="audioEnabled && audioNoteOff('node_'+node.key)"
+                        @pointerdown="setActivePitches([getNoteId(node)]); audioEnabled && audioNoteOn('node_'+node.key, [getNoteId(node)], [node])"
+                        @pointerup="clearActivePitches(); audioEnabled && audioNoteOff('node_'+node.key)"
+                        @pointerleave="clearActivePitches(); audioEnabled && audioNoteOff('node_'+node.key)"
                     ></circle>
                     <text :x="node.svg.x" :y="node.svg.y" style="fill: white;">
                         {{ showPitchClasses ? getNoteId(node) : getNoteName(node) }}
@@ -314,6 +338,60 @@
         <div class="zoom-control">
             <label>Zoom: {{ Math.round(zoom * 100) }}%</label>
             <input type="range" v-model.number="zoom" min="0.2" max="3" step="0.1" />
+            <button @click="showClocks = !showClocks" style="margin-top:4px;font-size:12px;padding:5px 12px;">
+                {{ showClocks ? 'Hide Clocks' : 'Show Clocks' }}
+            </button>
+        </div>
+
+        <div v-if="showClocks" class="clock-panel">
+            <div class="clock-wrap">
+                <span>Chromatic</span>
+                <svg width="140" height="140">
+                    <polygon v-if="activePitches.size > 1"
+                        :points="clockPolygonPoints(1)"
+                        fill="rgba(50,50,72,0.15)" stroke="#323248" stroke-width="1.5" />
+                    <g v-for="pc in 12" :key="'chr-'+pc">
+                        <circle
+                            :cx="clockPosition(pc-1, 1, 70, 70, 52).x"
+                            :cy="clockPosition(pc-1, 1, 70, 70, 52).y"
+                            r="13"
+                            :class="'color-'+(pc-1)"
+                            :opacity="activePitches.has(pc-1) ? 1 : 0.22"
+                        />
+                        <text
+                            :x="clockPosition(pc-1, 1, 70, 70, 52).x"
+                            :y="clockPosition(pc-1, 1, 70, 70, 52).y"
+                            font-size="9" font-weight="700" fill="white"
+                            text-anchor="middle" dominant-baseline="central"
+                            :opacity="activePitches.has(pc-1) ? 1 : 0.5"
+                        >{{ showPitchClasses ? (pc-1) : noteNames[pc-1] }}</text>
+                    </g>
+                </svg>
+            </div>
+            <div class="clock-wrap">
+                <span>Circle of Fifths</span>
+                <svg width="140" height="140">
+                    <polygon v-if="activePitches.size > 1"
+                        :points="clockPolygonPoints(7)"
+                        fill="rgba(50,50,72,0.15)" stroke="#323248" stroke-width="1.5" />
+                    <g v-for="pc in 12" :key="'fif-'+pc">
+                        <circle
+                            :cx="clockPosition(pc-1, 7, 70, 70, 52).x"
+                            :cy="clockPosition(pc-1, 7, 70, 70, 52).y"
+                            r="13"
+                            :class="'color-'+(pc-1)"
+                            :opacity="activePitches.has(pc-1) ? 1 : 0.22"
+                        />
+                        <text
+                            :x="clockPosition(pc-1, 7, 70, 70, 52).x"
+                            :y="clockPosition(pc-1, 7, 70, 70, 52).y"
+                            font-size="9" font-weight="700" fill="white"
+                            text-anchor="middle" dominant-baseline="central"
+                            :opacity="activePitches.has(pc-1) ? 1 : 0.5"
+                        >{{ showPitchClasses ? (pc-1) : noteNames[pc-1] }}</text>
+                    </g>
+                </svg>
+            </div>
         </div>
 
         <div class="controls-wrap">
@@ -357,7 +435,6 @@
     <script>
         const X_STEP = Math.sqrt(3) / 2;
         const BASE_SIZE = 100;
-        const NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
         
         // All sets of 3 positive intervals summing to 12
         const ALL_INTERVALS = [
@@ -495,7 +572,10 @@
                 playhead: -1,
                 isPlaying: false,
                 bpm: 60,
-                playTimer: null
+                playTimer: null,
+                activePitches: new Set(),
+                showClocks: true,
+                noteNames: Object.freeze(["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"])
             },
             created() {
                 // Fetch set-class data from the user's repository
@@ -676,7 +756,7 @@
                 getNoteId(node) {
                     return (( node.x * this.selectedIntervals[1] + node.y * (12 - this.selectedIntervals[2]) ) % 12 + 12) % 12;
                 },
-                getNoteName(node) { return NOTE_NAMES[this.getNoteId(node)]; },
+                getNoteName(node) { return this.noteNames[this.getNoteId(node)]; },
                 reset() {
                     this.stopTrajectory();
                     this.revealedKeys = new Set(['0_0_0']);
@@ -828,11 +908,12 @@
                     if (!this.isPlaying) return;
                     const ms = Math.round(60000 / this.bpm);
                     const key = this.trajectorySeq[this.playhead];
-                    if (this.audioEnabled && key) {
+                    if (key) {
                         const t = this.parseKey(key);
                         const tNodes = this.getTriangleNodes(t);
                         const noteIds = tNodes.map(n => this.getNoteId(n));
-                        audioPlayChord(noteIds, tNodes, this.selectedIntervals, ms * 0.9);
+                        this.setActivePitches(noteIds);
+                        if (this.audioEnabled) audioPlayChord(noteIds, tNodes, this.selectedIntervals, ms * 0.9);
                     }
                     if (this.playhead >= this.trajectorySeq.length - 1) {
                         this.isPlaying = false;
@@ -851,6 +932,27 @@
                     this.isPlaying = false;
                     if (this.playTimer) { clearTimeout(this.playTimer); this.playTimer = null; }
                     this.playhead = -1;
+                    this.clearActivePitches();
+                },
+                setActivePitches(noteIds) {
+                    this.activePitches = new Set(noteIds);
+                },
+                clearActivePitches() {
+                    this.activePitches = new Set();
+                },
+                // pc 0 (C) at top; clockType=1 → chromatic, clockType=7 → circle of fifths
+                clockPosition(pc, clockType, cx, cy, r) {
+                    const pos = ((pc * clockType) % 12);
+                    const angle = (pos / 12) * 2 * Math.PI - Math.PI / 2;
+                    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+                },
+                clockPolygonPoints(clockType) {
+                    return Array.from(this.activePitches)
+                        .map(pc => {
+                            const p = this.clockPosition(pc, clockType, 70, 70, 52);
+                            return `${p.x},${p.y}`;
+                        })
+                        .join(' ');
                 },
                 // Audio bridge (expose module-level functions to template)
                 audioNoteOn(key, noteIds, nodes) { audioNoteOn(key, noteIds, nodes, this.selectedIntervals); },
@@ -859,13 +961,15 @@
                 onTrianglePointerDown(t) {
                     if (!t.revealed) {
                         this.reveal(t);
-                    } else if (this.audioEnabled) {
+                    } else {
                         const tNodes = this.getTriangleNodes(t);
                         const noteIds = tNodes.map(n => this.getNoteId(n));
-                        audioNoteOn('tri_' + t.key, noteIds, tNodes, this.selectedIntervals);
+                        this.setActivePitches(noteIds);
+                        if (this.audioEnabled) audioNoteOn('tri_' + t.key, noteIds, tNodes, this.selectedIntervals);
                     }
                 },
                 onTrianglePointerUp(t) {
+                    this.clearActivePitches();
                     if (this.audioEnabled) audioNoteOff('tri_' + t.key);
                 },
                 // Interaction
