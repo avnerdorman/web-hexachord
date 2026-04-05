@@ -376,7 +376,27 @@
             return 36 + pc;
         }
 
-        // noteIds: array of pitch-class ints (for single-note node playback)
+        function getNormalOrder(pcSet) {
+            let unique = [...new Set(pcSet)].sort((a, b) => a - b);
+            const n = unique.length;
+            let rotations = [];
+            for (let i = 0; i < n; i++) {
+                let rot = [];
+                for (let j = 0; j < n; j++) rot.push(unique[(i + j) % n]);
+                rotations.push(rot);
+            }
+            const span = (r, i) => (r[n - i] - r[0] + 12) % 12;
+            rotations.sort((a, b) => {
+                for (let i = 1; i < n; i++) {
+                    const d = span(a, i) - span(b, i);
+                    if (d !== 0) return d;
+                }
+                return a[0] - b[0];
+            });
+            return rotations[0];
+        }
+
+        // noteIds: array of pitch-class ints
         // nodes:   array of {x,y,key} with grid coords (for voiced chord playback)
         // intervals: the active interval set (needed for voicing)
         function audioNoteOn(key, noteIds, nodes, intervals) {
@@ -387,8 +407,10 @@
                 ? nodes.map(n => nodeToMidi(n, intervals))
                 : noteIds.map(pc => 60 + pc); // fallback: flat octave around C4
 
-            // Bass: first note id is the root node of the triangle (index 0 of getTriangleNodes)
-            const bassPC = noteIds ? noteIds[0] : ((midiPitches[0] % 12 + 12) % 12);
+            // Bass: first element of normal order is the root
+            const bassPC = noteIds.length > 1
+                ? getNormalOrder(noteIds)[0]
+                : noteIds[0];
             const bassMidi = bassOctaveMidi(bassPC);
 
             const allMidi = [bassMidi, ...midiPitches];
