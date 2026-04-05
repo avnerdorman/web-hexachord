@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tonnetz Explorer</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --primary-color: #323248;
+            --accent-color: #1f7aff;
+            --placeholder-color: #e9ecef;
+            --node-color: #ffffff;
+            --text-color: #323248;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #app {
+            flex-grow: 1;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+            background-image:
+                radial-gradient(#ddd 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        #app:active { cursor: grabbing; }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .trichord {
+            stroke: var(--primary-color);
+            stroke-width: 1.5;
+            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: pointer;
+        }
+
+        .trichord.placeholder {
+            fill: var(--placeholder-color);
+            stroke: #ddd;
+            stroke-dasharray: 4;
+            opacity: 0.6;
+        }
+        .trichord.placeholder:hover {
+            fill: #e0e7ff;
+            stroke: var(--accent-color);
+            opacity: 1;
+        }
+
+        /* Pulse animation on placeholder triangles until first reveal */
+        .trichord.placeholder.pulse-hint {
+            animation: placeholderPulse 2s ease-in-out infinite;
+        }
+        @keyframes placeholderPulse {
+            0%, 100% { opacity: 0.6; stroke: #ddd; }
+            50% { opacity: 1; stroke: var(--accent-color); fill: #e8eeff; }
+        }
+
+        .trichord.revealed {
+            fill: rgba(255, 255, 255, 0.9);
+            animation: growIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .trichord.trajectory {
+            fill: #90ee90;
+            stroke: #4caf50;
+            stroke-width: 2;
+            opacity: 1;
+        }
+
+        .trichord.playhead {
+            fill: gold;
+            stroke: #b8860b;
+            stroke-width: 3;
+            opacity: 1;
+        }
+
+        @keyframes growIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .node circle {
+            fill: white;
+            stroke: #ccc;
+            stroke-width: 1;
+            transition: all 0.3s;
+        }
+
+        .node text {
+            font-size: 10px;
+            font-weight: 700;
+            text-anchor: middle;
+            dominant-baseline: central;
+            fill: #888;
+            pointer-events: none;
+        }
+
+        /* ── Bottom control bar ─────────────────────────────────── */
+        .controls-wrap {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+            width: max-content;
+            max-width: calc(100% - 32px);
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            background: white;
+            padding: 8px 16px;
+            border-radius: 50px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        }
+
+        .controls input[type="text"] {
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid #ccc;
+            font-family: inherit;
+            font-weight: 500;
+            outline: none;
+            width: 200px;
+            font-size: 13px;
+        }
+
+        button {
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: none;
+            background: var(--primary-color);
+            color: white;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: transform 0.15s, background 0.15s;
+            white-space: nowrap;
+        }
+        button:hover {
+            background: var(--accent-color);
+            transform: translateY(-1px);
+        }
+        button:active { transform: translateY(0); }
+        button:disabled { opacity: 0.4; cursor: default; transform: none; background: var(--primary-color); }
+
+        /* ── Top-right settings panel ───────────────────────────── */
+        .settings-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 101;
+            background: white;
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            font-size: 17px;
+            line-height: 36px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            cursor: pointer;
+            transition: background 0.15s, transform 0.15s;
+        }
+        .settings-btn:hover { background: #f0f0f0; transform: rotate(30deg); }
+
+        .settings-panel {
+            position: absolute;
+            top: 54px;
+            right: 12px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            padding: 14px 16px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 200px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .settings-panel label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .settings-panel input[type="range"] {
+            cursor: pointer;
+            width: 100px;
+        }
+        .settings-panel select {
+            font-family: inherit;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            max-width: 100%;
+        }
+        .settings-divider {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 2px 0;
+        }
+
+        /* ── First-visit tooltip ────────────────────────────────── */
+        .first-hint {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: var(--primary-color);
+            color: white;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.6;
+            z-index: 100;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            max-width: 210px;
+            animation: fadeSlideIn 0.4s ease both;
+        }
+        .first-hint::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 18px;
+            width: 12px;
+            height: 12px;
+            background: var(--primary-color);
+            transform: rotate(45deg);
+        }
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Note colors ────────────────────────────────────────── */
+        .color-0 { fill: #ff941f !important; stroke: #ff941f !important; }
+        .color-1 { fill: #e66438 !important; stroke: #e66438 !important; }
+        .color-2 { fill: #cc3450 !important; stroke: #cc3450 !important; }
+        .color-3 { fill: #b30469 !important; stroke: #b30469 !important; }
+        .color-4 { fill: #822b9b !important; stroke: #822b9b !important; }
+        .color-5 { fill: #5053cd !important; stroke: #5053cd !important; }
+        .color-6 { fill: #1f7aff !important; stroke: #1f7aff !important; }
+        .color-7 { fill: #258dab !important; stroke: #258dab !important; }
+        .color-8 { fill: #2ba058 !important; stroke: #2ba058 !important; }
+        .color-9 { fill: #31b304 !important; stroke: #31b304 !important; }
+        .color-10 { fill: #76a90d !important; stroke: #76a90d !important; }
+        .color-11 { fill: #e6bd00 !important; stroke: #e6bd00 !important; }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            font-size: 13px;
+            font-weight: 600;
+            background: #f0f0f0;
+            border-radius: 20px;
+            padding: 2px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle-switch span {
+            padding: 5px 12px;
+            border-radius: 16px;
+            transition: background 0.2s, color 0.2s;
+            color: #888;
+            white-space: nowrap;
+        }
+        .toggle-switch span.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        /* Audio icon button */
+        .audio-btn {
+            font-size: 18px;
+            padding: 4px 10px;
+            background: transparent;
+            color: var(--primary-color);
+            border: 1.5px solid #ccc;
+            border-radius: 20px;
+            line-height: 1;
+        }
+        .audio-btn:hover { background: #f0f0f0; transform: none; }
+        .audio-btn.on { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+        .audio-btn.on:hover { background: var(--accent-color); border-color: var(--accent-color); }
+
+        .revealed-text {
+            fill: #323248;
+            font-size: 14px;
+            font-weight: 600;
+            pointer-events: none;
+        }
+
+        /* ── Clock panel ────────────────────────────────────────── */
+        .clock-panel {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 100;
+        }
+        .clock-wrap {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #888;
+        }
+
+        /* ── Trajectory playback controls ───────────────────────── */
+        .playback-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: white;
+            padding: 8px 16px;
+            border-radius: 50px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .playback-controls label {
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .playback-controls input[type="number"] {
+            width: 56px;
+            padding: 4px 8px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .error-msg {
+            text-align: center;
+            color: #e03;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+
+        <!-- First-visit hint (dismissed on first triangle click) -->
+        <div class="first-hint" v-if="showFirstHint">
+            Click a <b>dashed</b> triangle to reveal it.<br>
+            Click a <b>solid</b> triangle or node to hear it.<br>
+            <b>Drag</b> to pan the grid.
+        </div>
+
+        <!-- Settings gear -->
+        <button class="settings-btn" @click.stop="showSettings = !showSettings" title="Settings">⚙</button>
+
+        <!-- Settings panel -->
+        <div class="settings-panel" v-if="showSettings" @click.stop>
+            <label>Zoom: {{ Math.round(zoom * 100) }}%
+                <input type="range" v-model.number="zoom" min="0.2" max="3" step="0.05" />
+            </label>
+            <hr class="settings-divider">
+            <label>Labels:
+                <div class="toggle-switch" @click="showPitchClasses = !showPitchClasses">
+                    <span :class="{ active: !showPitchClasses }">Names</span>
+                    <span :class="{ active: showPitchClasses }">0–11</span>
+                </div>
+            </label>
+            <label>Clocks:
+                <div class="toggle-switch" @click="showClocks = !showClocks">
+                    <span :class="{ active: !showClocks }">Hide</span>
+                    <span :class="{ active: showClocks }">Show</span>
+                </div>
+            </label>
+            <hr class="settings-divider">
+            <label style="flex-direction:column;align-items:flex-start;gap:4px;">Interval set:
+                <select v-model="selectedIntervals" @change="reset" style="width:100%">
+                    <option v-for="(ints, index) in allIntervals" :value="ints" :key="index">
+                        {{ getLabelForIntervals(ints) }}
+                    </option>
+                </select>
+            </label>
+            <hr class="settings-divider">
+            <button @click="autoExpandN(20); showSettings=false">Expand Full</button>
+        </div>
+
+        <svg :view-box.camel="viewBox" @mousedown="startPan" @mousemove="onPan" @mouseup="endPan" @mouseleave="endPan" @wheel.prevent="onWheel">
+            <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
+                    markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#323248" />
+                </marker>
+            </defs>
+            <g :transform="`translate(${pan.x} ${pan.y}) scale(${zoom})`">
+
+                <!-- Triangles -->
+                <g v-for="t in allTriangles" :key="t.key">
+                    <polygon
+                        :points="getTrianglePoints(t)"
+                        :class="['trichord', t.revealed ? 'revealed' : 'placeholder', !t.revealed && showFirstHint ? 'pulse-hint' : '', trajectoryKeys.has(t.key) ? 'trajectory' : '', playheadKey === t.key ? 'playhead' : '']"
+                        @pointerdown="onTrianglePointerDown(t)"
+                        @pointerup="onTrianglePointerUp(t)"
+                        @pointerleave="onTrianglePointerUp(t)"
+                    />
+                </g>
+
+                <!-- Arrow lines (behind nodes) -->
+                <g v-for="line in trajectoryLines" :key="'arrow-'+line.id">
+                    <line 
+                        :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
+                        stroke="#323248" stroke-width="4" stroke-linecap="round" fill="none"
+                        marker-end="url(#arrow)" />
+                </g>
+
+                <!-- Nodes -->
+                <g v-for="node in visibleNodes" :key="node.key" class="node">
+                    <circle :cx="node.svg.x" :cy="node.svg.y" r="18" :class="'color-' + getNoteId(node)"
+                        @pointerdown="setActivePitches([getNoteId(node)]); audioEnabled && audioNoteOn('node_'+node.key, [getNoteId(node)], [node])"
+                        @pointerup="clearActivePitches(); audioEnabled && audioNoteOff('node_'+node.key)"
+                        @pointerleave="clearActivePitches(); audioEnabled && audioNoteOff('node_'+node.key)"
+                    ></circle>
+                    <text :x="node.svg.x" :y="node.svg.y" style="fill: white;">
+                        {{ showPitchClasses ? getNoteId(node) : getNoteName(node) }}
+                    </text>
+                </g>
+
+                <!-- Arrow labels (in front of nodes) -->
+                <g v-for="line in trajectoryLines" :key="'label-'+line.id">
+                    <template v-if="line.label">
+                        <circle :cx="line.midX" :cy="line.midY" r="9" fill="white" stroke="#323248" stroke-width="1.5" />
+                        <text :x="line.midX" :y="line.midY" font-size="11" font-weight="700" fill="#323248" text-anchor="middle" dominant-baseline="central">
+                            {{ line.label }}
+                        </text>
+                    </template>
+                </g>
+
+            </g>
+        </svg>
+
+        <!-- Clock panel (repositioned to avoid covering controls) -->
+        <div v-if="showClocks" class="clock-panel" style="right:12px; top:50%; transform:translateY(-50%);">
+            <div class="clock-wrap">
+                <span>Chromatic</span>
+                <svg width="120" height="120">
+                    <polygon v-if="activePitchArray.length > 1"
+                        :points="clockPolygonPoints(1)"
+                        fill="rgba(50,50,72,0.15)" stroke="#323248" stroke-width="1.5" />
+                    <g v-for="pc in 12" :key="'chr-'+pc">
+                        <circle
+                            :cx="clockPosition(pc-1, 1, 60, 60, 44).x"
+                            :cy="clockPosition(pc-1, 1, 60, 60, 44).y"
+                            r="11"
+                            :class="'color-'+(pc-1)"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.22"
+                        />
+                        <text
+                            :x="clockPosition(pc-1, 1, 60, 60, 44).x"
+                            :y="clockPosition(pc-1, 1, 60, 60, 44).y"
+                            font-size="8" font-weight="700" fill="white"
+                            text-anchor="middle" dominant-baseline="central"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.5"
+                        >{{ showPitchClasses ? (pc-1) : noteNames[pc-1] }}</text>
+                    </g>
+                </svg>
+            </div>
+            <div class="clock-wrap">
+                <span>Circle of Fifths</span>
+                <svg width="120" height="120">
+                    <polygon v-if="activePitchArray.length > 1"
+                        :points="clockPolygonPoints(7)"
+                        fill="rgba(50,50,72,0.15)" stroke="#323248" stroke-width="1.5" />
+                    <g v-for="pc in 12" :key="'fif-'+pc">
+                        <circle
+                            :cx="clockPosition(pc-1, 7, 60, 60, 44).x"
+                            :cy="clockPosition(pc-1, 7, 60, 60, 44).y"
+                            r="11"
+                            :class="'color-'+(pc-1)"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.22"
+                        />
+                        <text
+                            :x="clockPosition(pc-1, 7, 60, 60, 44).x"
+                            :y="clockPosition(pc-1, 7, 60, 60, 44).y"
+                            font-size="8" font-weight="700" fill="white"
+                            text-anchor="middle" dominant-baseline="central"
+                            :opacity="activePitchArray.includes(pc-1) ? 1 : 0.5"
+                        >{{ showPitchClasses ? (pc-1) : noteNames[pc-1] }}</text>
+                    </g>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Main bottom controls -->
+        <div class="controls-wrap" @click.stop>
+
+            <!-- Trace input row -->
+            <div class="controls">
+                <button :class="['audio-btn', audioEnabled ? 'on' : '']" @click="audioEnabled = !audioEnabled"
+                    :title="audioEnabled ? 'Sound on' : 'Sound off'">{{ audioEnabled ? '🔊' : '🔇' }}</button>
+                <input type="text" v-model="traceInput" :placeholder="tracePlaceholder" @keyup.enter="traceProgression" />
+                <button @click="traceProgression">Trace</button>
+                <button @click="clearTrace" v-if="trajectoryKeys.size > 0">✕ Clear</button>
+                <button @click="autoExpand">+1 Step</button>
+                <button @click="reset">Reset</button>
+            </div>
+
+            <!-- Error -->
+            <div v-if="traceError" class="error-msg">{{ traceError }}</div>
+
+            <!-- Playback controls (only when trajectory exists) -->
+            <div v-if="trajectorySeq.length > 0" class="playback-controls">
+                <button @click="playTrajectory" :disabled="isPlaying">▶ Play</button>
+                <button @click="pauseTrajectory" :disabled="!isPlaying">⏸ Pause</button>
+                <button @click="stopTrajectory">⏹ Stop</button>
+                <label>BPM <input type="number" v-model.number="bpm" min="20" max="240" /></label>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const X_STEP = Math.sqrt(3) / 2;
+        const BASE_SIZE = 100;
+        
+        // All sets of 3 positive intervals summing to 12
+        const ALL_INTERVALS = [
+            [1, 1, 10], [1, 2, 9], [1, 3, 8], [1, 4, 7], [1, 5, 6],
+            [2, 2, 8], [2, 3, 7], [2, 4, 6], [2, 5, 5],
+            [3, 3, 6], [3, 4, 5],
+            [4, 4, 4]
+        ];
+
+        // --- Audio engine ---
+        let _audioCtx = null;
+        const activeAudioNodes = {};
+
+        function getAudioCtx() {
+            if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            return _audioCtx;
+        }
+
+        function midiToFreq(midi) {
+            return 440 * Math.pow(2, (midi - 69) / 12);
+        }
+
+        // Maps a grid node {x,y} to a MIDI pitch, using the same pitch-class
+        // formula as getNoteId(), placed in the octave closest to C4 (MIDI 60).
+        function nodeToMidi(node, intervals) {
+            const pc = ((node.x * intervals[1] + node.y * (12 - intervals[2])) % 12 + 12) % 12;
+            // Choose the octave that places this pc closest to C4 (MIDI 60)
+            // Candidates: pc + 48 (oct3), pc + 60 (oct4), pc + 72 (oct5)
+            const candidates = [pc + 48, pc + 60, pc + 72];
+            return candidates.reduce((best, m) => Math.abs(m - 60) < Math.abs(best - 60) ? m : best);
+        }
+
+        // Returns the MIDI pitch for a pitch class placed in octave 2 (C2=36 … B2=47).
+        function bassOctaveMidi(pc) {
+            return 36 + pc;
+        }
+
+        function getNormalOrder(pcSet) {
+            let unique = [...new Set(pcSet)].sort((a, b) => a - b);
+            const n = unique.length;
+            let rotations = [];
+            for (let i = 0; i < n; i++) {
+                let rot = [];
+                for (let j = 0; j < n; j++) rot.push(unique[(i + j) % n]);
+                rotations.push(rot);
+            }
+            const span = (r, i) => (r[n - i] - r[0] + 12) % 12;
+            rotations.sort((a, b) => {
+                for (let i = 1; i < n; i++) {
+                    const d = span(a, i) - span(b, i);
+                    if (d !== 0) return d;
+                }
+                return a[0] - b[0];
+            });
+            return rotations[0];
+        }
+
+        // noteIds: array of pitch-class ints
+        // nodes:   array of {x,y,key} with grid coords (for voiced chord playback)
+        // intervals: the active interval set (needed for voicing)
+        function audioNoteOn(key, noteIds, nodes, intervals) {
+            const ctx = getAudioCtx();
+            ctx.resume();
+
+            const midiPitches = nodes && intervals
+                ? nodes.map(n => nodeToMidi(n, intervals))
+                : noteIds.map(pc => 60 + pc); // fallback: flat octave around C4
+
+            // Bass: first element of normal order is the root
+            const bassPC = noteIds.length > 1
+                ? getNormalOrder(noteIds)[0]
+                : noteIds[0];
+            const bassMidi = bassOctaveMidi(bassPC);
+            const NOTE_NAMES_LOG = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+            const chordNames = noteIds.map(pc => NOTE_NAMES_LOG[pc]);
+            console.log(
+                'chord:', chordNames, '(PCs:', noteIds, ')',
+                '| normalOrder:', getNormalOrder(noteIds).map(pc => NOTE_NAMES_LOG[pc]),
+                '| bass:', NOTE_NAMES_LOG[bassPC] + '2 (midi ' + bassMidi + ')',
+                '| upper voices (midi):', midiPitches.map(m => NOTE_NAMES_LOG[m % 12] + Math.floor(m/12 - 1) + ' (' + m + ')')
+            );
+
+            const allMidi = [bassMidi, ...midiPitches];
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.25 / allMidi.length, ctx.currentTime);
+            gain.connect(ctx.destination);
+
+            const oscillators = allMidi.map((midi, i) => {
+                const osc = ctx.createOscillator();
+                osc.type = i === 0 ? 'sine' : 'triangle'; // bass gets sine, upper voices get triangle
+                osc.frequency.value = midiToFreq(midi);
+                osc.connect(gain);
+                osc.start();
+                return osc;
+            });
+            activeAudioNodes[key] = { oscillators, gain };
+        }
+
+        function audioNoteOff(key) {
+            const node = activeAudioNodes[key];
+            if (!node) return;
+            const ctx = getAudioCtx();
+            const { gain, oscillators } = node;
+            gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+            oscillators.forEach(osc => osc.stop(ctx.currentTime + 0.25));
+            delete activeAudioNodes[key];
+        }
+
+        function audioPlayChord(noteIds, nodes, intervals, durationMs) {
+            const key = '__chord__' + Date.now();
+            audioNoteOn(key, noteIds, nodes, intervals);
+            setTimeout(() => audioNoteOff(key), durationMs);
+        }
+
+        new Vue({
+            el: '#app',
+            data: {
+                revealedKeys: new Set(['0_0_0']),
+                trajectoryKeys: new Set(),
+                trajectorySeq: [],
+                traceInput: '',
+                traceError: '',
+                showPitchClasses: false,
+                audioEnabled: false,
+                pan: { x: 0, y: 0 },
+                zoom: 1,
+                lastMouse: { x: 0, y: 0 },
+                isPanning: false,
+                wasPanning: false,
+                width: 600,
+                height: 400,
+                allIntervals: ALL_INTERVALS,
+                selectedIntervals: ALL_INTERVALS.find(i => i[0]===3 && i[1]===4 && i[2]===5),
+                setClasses: [],
+                playhead: -1,
+                isPlaying: false,
+                bpm: 60,
+                playTimer: null,
+                activePitches: new Set(),
+                showClocks: true,
+                showSettings: false,
+                showFirstHint: true,
+                noteNames: Object.freeze(["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"])
+            },
+            created() {
+                // Fetch set-class data from the user's repository
+                fetch('https://raw.githubusercontent.com/avnerdorman/set-class-data/main/set-classes.json')
+                    .then(r => r.json())
+                    .then(data => {
+                        this.setClasses = data.setClasses.filter(sc => sc.cardinality === 3);
+                    })
+                    .catch(e => console.error("Could not fetch set-class-data: ", e));
+            },
+            computed: {
+                viewBox() { return `0 0 ${this.width} ${this.height}`; },
+                playheadKey() { return this.trajectorySeq[this.playhead] || null; },
+                activePitchArray() { return Array.from(this.activePitches); },
+                revealedTriangles() {
+                    return Array.from(this.revealedKeys).map(key => this.parseKey(key));
+                },
+                placeholderTriangles() {
+                    const placeholders = new Set();
+                    this.revealedTriangles.forEach(t => {
+                        this.getNeighbors(t).forEach(nbKey => {
+                            if (!this.revealedKeys.has(nbKey)) placeholders.add(nbKey);
+                        });
+                    });
+                    return Array.from(placeholders).map(key => this.parseKey(key));
+                },
+                allTriangles() {
+                    const revealed = this.revealedTriangles.map(t => ({ ...t, revealed: true }));
+                    const placeholders = this.placeholderTriangles.map(t => ({ ...t, revealed: false }));
+                    return [...revealed, ...placeholders];
+                },
+                visibleNodes() {
+                    const nodes = new Map();
+                    this.allTriangles.forEach(t => {
+                        this.getTriangleNodes(t).forEach(node => {
+                            nodes.set(node.key, node);
+                        });
+                    });
+                    return Array.from(nodes.values());
+                },
+                tracePlaceholder() {
+                    const s = this.selectedIntervals;
+                    return (s[0] === 3 && s[1] === 4 && s[2] === 5)
+                        ? 'e.g. C+ Am F G  or  C+ P L R'
+                        : 'e.g. C+ J K  or  0 4 7 J K';
+                },
+                trajectoryLines() {
+                    const lines = [];
+                    if (!this.trajectorySeq) return lines;
+
+                    // Neighbor index → label mapping (same for both up and down triangles):
+                    // index 0 → intervals[1] edge → R (triadic) / L (non-triadic)
+                    // index 1 → intervals[0] edge → L (triadic) / K (non-triadic)
+                    // index 2 → intervals[2] edge → P (triadic) / J (non-triadic)
+                    const is345 = this.selectedIntervals[0] === 3 && this.selectedIntervals[1] === 4 && this.selectedIntervals[2] === 5;
+                    const LABELS = is345 ? ['R', 'L', 'P'] : ['L', 'K', 'J'];
+                    const getLabelByEdgeNodes = (t, nodeA, nodeB) => {
+                        const neighbors = this.getNeighbors(t);
+                        for (let idx = 0; idx < neighbors.length; idx++) {
+                            const nbNodeKeys = this.getTriangleNodes(this.parseKey(neighbors[idx])).map(n => n.key);
+                            if (nbNodeKeys.includes(nodeA.key) && nbNodeKeys.includes(nodeB.key)) return LABELS[idx];
+                        }
+                        return '';
+                    };
+
+                    for (let i = 0; i < this.trajectorySeq.length - 1; i++) {
+                        const k1 = this.trajectorySeq[i];
+                        const k2 = this.trajectorySeq[i+1];
+                        
+                        const t1 = this.parseKey(k1);
+                        const t2 = this.parseKey(k2);
+                        const c1 = this.getCenter(t1);
+                        const c2 = this.getCenter(t2);
+
+                        const dx = c2.x - c1.x;
+                        const dy = c2.y - c1.y;
+                        const len = Math.sqrt(dx*dx + dy*dy);
+                        const padding = 15; // Shorten line slightly so arrowhead is visible
+                        
+                        let label = '';
+                        if (t1.type !== t2.type) {
+                            const nodes1 = this.getTriangleNodes(t1);
+                            const nodes2 = this.getTriangleNodes(t2);
+                            const keys2 = new Set(nodes2.map(n => n.key));
+                            const sharedNodes = nodes1.filter(n => keys2.has(n.key));
+                            const unsharedNodes1 = nodes1.filter(n => !keys2.has(n.key));
+
+                            if (sharedNodes.length === 2) {
+                                // 2 vertices shared = direct neighbor (edge crossing)
+                                const neighbors1 = this.getNeighbors(t1);
+                                const idx = neighbors1.indexOf(t2.key);
+                                if (idx >= 0) label = LABELS[idx];
+                            } else if (sharedNodes.length === 1 && unsharedNodes1.length === 2) {
+                                // 1 vertex shared = vertex crossing; label = transformation of opposite edge
+                                const base = getLabelByEdgeNodes(t1, unsharedNodes1[0], unsharedNodes1[1]);
+                                if (base) label = base + "'";
+                            }
+                        }
+
+                        if (len > padding) {
+                            lines.push({ 
+                                x1: c1.x, y1: c1.y, 
+                                x2: c2.x - (dx/len)*padding, 
+                                y2: c2.y - (dy/len)*padding, 
+                                midX: c1.x + dx/2,
+                                midY: c1.y + dy/2,
+                                label: label,
+                                id: i 
+                            });
+                        }
+                    }
+                    return lines;
+                }
+            },
+            methods: {
+                logicalToSvg(node) {
+                    const origX = node.x * X_STEP;
+                    const origY = node.y + node.x / 2;
+                    return {
+                        x: origY * BASE_SIZE,
+                        y: -origX * BASE_SIZE
+                    };
+                },
+                getTriangleNodes(t) {
+                    const nodes = t.type === 0 
+                        ? [{x: t.x, y: t.y}, {x: t.x+1, y: t.y}, {x: t.x, y: t.y+1}]
+                        : [{x: t.x, y: t.y}, {x: t.x-1, y: t.y+1}, {x: t.x, y: t.y+1}];
+                    
+                    return nodes.map(n => ({
+                        ...n,
+                        key: `${n.x}_${n.y}`,
+                        svg: this.logicalToSvg(n)
+                    }));
+                },
+                getICV(intervals) {
+                    const counts = [0, 0, 0, 0, 0, 0];
+                    intervals.forEach(i => {
+                        const ic = Math.min(i, 12 - i);
+                        if (ic >= 1 && ic <= 6) {
+                            counts[ic - 1]++;
+                        }
+                    });
+                    return counts.join('');
+                },
+                getLabelForIntervals(ints) {
+                    const icv = this.getICV(ints);
+                    const setClass = this.setClasses.find(sc => sc.icv === icv);
+                    if (setClass) {
+                        return `[${ints.join(', ')}] — ${setClass.primeForm} / Forte ${setClass.forte}`;
+                    }
+                    return `[${ints.join(', ')}]`;
+                },
+                getCenter(t) {
+                    const nodes = this.getTriangleNodes(t);
+                    return {
+                        x: (nodes[0].svg.x + nodes[1].svg.x + nodes[2].svg.x) / 3,
+                        y: (nodes[0].svg.y + nodes[1].svg.y + nodes[2].svg.y) / 3
+                    };
+                },
+                getTrianglePoints(t) {
+                    return this.getTriangleNodes(t).map(n => `${n.svg.x},${n.svg.y}`).join(' ');
+                },
+                getNeighbors(t) {
+                    // Up triangle (Type 0) neighbors: (1, x+1, y-1), (1, x+1, y), (1, x, y)
+                    // Down triangle (Type 1) neighbors: (0, x-1, y+1), (0, x-1, y), (0, x, y)
+                    return t.type === 0 
+                        ? [`1_${t.x+1}_${t.y-1}`, `1_${t.x+1}_${t.y}`, `1_${t.x}_${t.y}`]
+                        : [`0_${t.x-1}_${t.y+1}`, `0_${t.x-1}_${t.y}`, `0_${t.x}_${t.y}`];
+                },
+                parseKey(key) {
+                    const [type, x, y] = key.split('_').map(Number);
+                    return { key, type, x, y };
+                },
+                reveal(t) {
+                    this.revealedKeys.add(t.key);
+                    this.revealedKeys = new Set(this.revealedKeys);
+                    this.$forceUpdate();
+                },
+                getNoteId(node) {
+                    return (( node.x * this.selectedIntervals[1] + node.y * (12 - this.selectedIntervals[2]) ) % 12 + 12) % 12;
+                },
+                getNoteName(node) { return this.noteNames[this.getNoteId(node)]; },
+                reset() {
+                    this.stopTrajectory();
+                    this.revealedKeys = new Set(['0_0_0']);
+                    this.revealedKeys = new Set(this.revealedKeys);
+                    this.trajectoryKeys = new Set();
+                    this.trajectorySeq = [];
+                    this.traceInput = '';
+                    this.traceError = '';
+                    this.pan = { x: this.width / 2, y: this.height / 2 };
+                    this.zoom = 1;
+                    this.showFirstHint = true;
+                },
+                autoExpandN(n) {
+                    for (let i = 0; i < n; i++) this.autoExpand();
+                },
+                autoExpand() {
+                    const currentPlaceholders = [...this.placeholderTriangles];
+                    currentPlaceholders.forEach(t => this.revealedKeys.add(t.key));
+                    this.revealedKeys = new Set(this.revealedKeys);
+                    this.$forceUpdate();
+                },
+                parseChordPitches(str) {
+                    const rootMap = {"C":0, "C#":1, "DB":1, "D":2, "D#":3, "EB":3, "E":4, "F":5, "F#":6, "GB":6, "G":7, "G#":8, "AB":8, "A":9, "A#":10, "BB":10, "B":11};
+                    const match = str.trim().match(/^([A-G][b#]?)(m|M|min|maj|\+|\-)?$/i);
+                    if (match) {
+                        let rId = rootMap[match[1].toUpperCase()];
+                        if (rId !== undefined) {
+                            const qual = (match[2] || '').toLowerCase();
+                            let isMinor = (qual.startsWith('m') && qual !== 'maj') || qual === '-';
+                            const a = this.selectedIntervals[0];
+                            const b = this.selectedIntervals[1];
+                            // up-triangle (+): {r, r+b, r+a+b};  down-triangle (-): {r, r+a, r+a+b}
+                            const third = isMinor ? (rId + a) % 12 : (rId + b) % 12;
+                            const top   = (rId + a + b) % 12;
+                            return [rId, third, top].sort((a,b)=>a-b).join(',');
+                        }
+                    }
+                    const parts = str.trim().split(/[\s,]+/).filter(Boolean);
+                    const pcs = parts.map(n => {
+                        const asInt = parseInt(n, 10);
+                        if (!isNaN(asInt) && asInt >= 0 && asInt <= 11) return asInt;
+                        return NaN;
+                    });
+                    return pcs.sort((a,b)=>a-b).join(',');
+                },
+                findClosestTriangle(startKey, targetStr) {
+                    const queue = [startKey];
+                    const visited = new Set([startKey]);
+                    while(queue.length > 0) {
+                        if (visited.size > 2000) break;
+                        const key = queue.shift();
+                        const t = this.parseKey(key);
+                        const tPitches = this.getTriangleNodes(t).map(n => this.getNoteId(n)).sort((a,b)=>a-b).join(',');
+                        
+                        if (tPitches === targetStr) return t;
+                        
+                        this.getNeighbors(t).forEach(nb => {
+                            if (!visited.has(nb)) {
+                                visited.add(nb);
+                                queue.push(nb);
+                            }
+                        });
+                    }
+                    return null;
+                },
+                traceProgression() {
+                    this.traceError = '';
+                    if (!this.traceInput.trim()) return;
+
+                    const is345 = this.selectedIntervals[0] === 3 && this.selectedIntervals[1] === 4 && this.selectedIntervals[2] === 5;
+                    const transformSet = is345 ? new Set(['p', 'l', 'r']) : new Set(['j', 'k', 'l']);
+
+                    // index 0 → R/L, index 1 → L/K, index 2 → P/J
+                    const LOWER_LABELS = is345 ? ['r', 'l', 'p'] : ['l', 'k', 'j'];
+                    const applyTransform = (fromKey, targetLabel) => {
+                        const neighbors = this.getNeighbors(this.parseKey(fromKey));
+                        const idx = LOWER_LABELS.indexOf(targetLabel);
+                        return idx >= 0 ? neighbors[idx] : null;
+                    };
+
+                    const tokens = this.traceInput.includes(',')
+                        ? this.traceInput.split(',').map(s => s.trim()).filter(Boolean)
+                        : this.traceInput.trim().split(/\s+/);
+
+                    this.trajectoryKeys = new Set();
+                    this.trajectorySeq = [];
+                    let currentKey = '0_0_0';
+
+                    for (const token of tokens) {
+                        const lc = token.toLowerCase();
+                        if (transformSet.has(lc)) {
+                            // Transformation token: ensure we have a starting position in the sequence
+                            if (this.trajectorySeq.length === 0) {
+                                this.trajectoryKeys.add(currentKey);
+                                this.revealedKeys.add(currentKey);
+                                this.trajectorySeq.push(currentKey);
+                            }
+                            const nextKey = applyTransform(currentKey, lc);
+                            if (nextKey) {
+                                this.trajectoryKeys.add(nextKey);
+                                this.revealedKeys.add(nextKey);
+                                this.trajectorySeq.push(nextKey);
+                                currentKey = nextKey;
+                            } else {
+                                this.traceError = 'Could not apply transformation: ' + token.toUpperCase();
+                                break;
+                            }
+                        } else {
+                            // Chord / pitch-class token: find via BFS
+                            const target = this.parseChordPitches(token);
+                            if (target.includes('NaN')) continue;
+                            const found = this.findClosestTriangle(currentKey, target);
+                            if (found) {
+                                if (this.trajectorySeq.length === 0 || this.trajectorySeq[this.trajectorySeq.length - 1] !== found.key) {
+                                    this.trajectoryKeys.add(found.key);
+                                    this.revealedKeys.add(found.key);
+                                    this.trajectorySeq.push(found.key);
+                                }
+                                currentKey = found.key;
+                            } else {
+                                this.traceError = 'Could not find chord: ' + target + ' in this Tonnetz.';
+                                break;
+                            }
+                        }
+                    }
+
+                    this.trajectoryKeys = new Set(this.trajectoryKeys);
+                    this.revealedKeys = new Set(this.revealedKeys);
+                    this.$forceUpdate();
+                },
+                clearTrace() {
+                    this.stopTrajectory();
+                    this.trajectoryKeys = new Set();
+                    this.trajectorySeq = [];
+                    this.traceInput = '';
+                    this.$forceUpdate();
+                },
+                playTrajectory() {
+                    if (this.isPlaying || this.trajectorySeq.length === 0) return;
+                    if (this.playhead < 0 || this.playhead >= this.trajectorySeq.length - 1) {
+                        this.playhead = 0;
+                    } else {
+                        this.playhead++;
+                    }
+                    this.audioEnabled = true;
+                    this.isPlaying = true;
+                    // Resume AudioContext during this user gesture so the first chord isn't silenced
+                    const ctx = getAudioCtx();
+                    ctx.resume().then(() => this.playStep());
+                },
+                playStep() {
+                    if (!this.isPlaying) return;
+                    const ms = Math.round(60000 / this.bpm);
+                    const key = this.trajectorySeq[this.playhead];
+                    if (key) {
+                        const t = this.parseKey(key);
+                        const tNodes = this.getTriangleNodes(t);
+                        const noteIds = tNodes.map(n => this.getNoteId(n));
+                        this.setActivePitches(noteIds);
+                        if (this.audioEnabled) audioPlayChord(noteIds, tNodes, this.selectedIntervals, ms * 0.9);
+                    }
+                    if (this.playhead >= this.trajectorySeq.length - 1) {
+                        this.isPlaying = false;
+                        return;
+                    }
+                    this.playTimer = setTimeout(() => {
+                        this.playhead++;
+                        this.playStep();
+                    }, ms);
+                },
+                pauseTrajectory() {
+                    this.isPlaying = false;
+                    if (this.playTimer) { clearTimeout(this.playTimer); this.playTimer = null; }
+                },
+                stopTrajectory() {
+                    this.isPlaying = false;
+                    if (this.playTimer) { clearTimeout(this.playTimer); this.playTimer = null; }
+                    this.playhead = -1;
+                    this.clearActivePitches();
+                },
+                setActivePitches(noteIds) {
+                    this.activePitches = new Set(noteIds);
+                },
+                clearActivePitches() {
+                    this.activePitches = new Set();
+                },
+                // pc 0 (C) at top; clockType=1 → chromatic, clockType=7 → circle of fifths
+                clockPosition(pc, clockType, cx, cy, r) {
+                    const pos = ((pc * clockType) % 12);
+                    const angle = (pos / 12) * 2 * Math.PI - Math.PI / 2;
+                    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+                },
+                clockPolygonPoints(clockType) {
+                    return this.activePitchArray
+                        .map(pc => {
+                            const p = this.clockPosition(pc, clockType, 60, 60, 44);
+                            return `${p.x},${p.y}`;
+                        })
+                        .join(' ');
+                },
+                // Audio bridge (expose module-level functions to template)
+                audioNoteOn(key, noteIds, nodes) { audioNoteOn(key, noteIds, nodes, this.selectedIntervals); },
+                audioNoteOff(key) { audioNoteOff(key); },
+                // Triangle pointer events
+                onTrianglePointerDown(t) {
+                    if (!t.revealed) {
+                        this.reveal(t);
+                        this.showFirstHint = false;
+                    } else {
+                        const tNodes = this.getTriangleNodes(t);
+                        const noteIds = tNodes.map(n => this.getNoteId(n));
+                        this.setActivePitches(noteIds);
+                        if (this.audioEnabled) audioNoteOn('tri_' + t.key, noteIds, tNodes, this.selectedIntervals);
+                    }
+                },
+                onTrianglePointerUp(t) {
+                    this.clearActivePitches();
+                    if (this.audioEnabled) audioNoteOff('tri_' + t.key);
+                },
+                // Interaction
+                startPan(e) {
+                    this.isPanning = true;
+                    this.wasPanning = false;
+                    this.lastMouse = { x: e.clientX, y: e.clientY };
+                },
+                onPan(e) {
+                    if (!this.isPanning) return;
+                    const dx = e.clientX - this.lastMouse.x;
+                    const dy = e.clientY - this.lastMouse.y;
+                    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this.wasPanning = true;
+                    this.pan.x += dx;
+                    this.pan.y += dy;
+                    this.lastMouse = { x: e.clientX, y: e.clientY };
+                },
+                endPan() { this.isPanning = false; },
+                onWheel(e) {
+                    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                    this.zoom = Math.min(3, Math.max(0.2, Math.round((this.zoom + delta) * 20) / 20));
+                },
+                updateSize() {
+                    const rect = this.$el.getBoundingClientRect();
+                    this.width = rect.width || 600;
+                    this.height = rect.height || 400;
+                },
+                dismissSettings() {
+                    this.showSettings = false;
+                }
+            },
+            mounted() {
+                this.updateSize();
+                this.pan = { x: this.width / 2, y: this.height / 2 };
+                const ro = new ResizeObserver(() => {
+                    this.updateSize();
+                });
+                ro.observe(this.$el);
+                // Close settings panel on outside click
+                document.addEventListener('click', this.dismissSettings);
+            },
+            beforeDestroy() {
+                document.removeEventListener('click', this.dismissSettings);
+            }
+        });
+    </script>
+</body>
+</html>
