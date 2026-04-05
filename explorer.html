@@ -373,8 +373,8 @@
                 tracePlaceholder() {
                     const s = this.selectedIntervals;
                     return (s[0] === 3 && s[1] === 4 && s[2] === 5)
-                        ? 'Progression (e.g. C+ Am F G)'
-                        : 'Pitch classes (e.g. 0 4 7, 2 5 9)';
+                        ? 'e.g. C+ Am F G  or  C+ P L R'
+                        : 'e.g. 0 4 7 J K  or  0,4,7,2,5,9';
                 },
                 trajectoryLines() {
                     const lines = [];
@@ -572,29 +572,80 @@
                 traceProgression() {
                     this.traceError = '';
                     if (!this.traceInput.trim()) return;
-                    let tokens = this.traceInput.includes(',') ? this.traceInput.split(',') : this.traceInput.trim().split(/\s+/);
-                    const chords = tokens.map(s => this.parseChordPitches(s));
+
+                    const is345 = this.selectedIntervals[0] === 3 && this.selectedIntervals[1] === 4 && this.selectedIntervals[2] === 5;
+                    const transformSet = is345 ? new Set(['p', 'l', 'r']) : new Set(['j', 'k', 'l']);
+
+                    const getIntIC = (n_a, n_b) => {
+                        const diff = Math.abs(this.getNoteId(n_a) - this.getNoteId(n_b));
+                        return Math.min(diff, 12 - diff);
+                    };
+                    const edgeLabel = (diff) => {
+                        if (diff === this.selectedIntervals[0]) return is345 ? 'l' : 'k';
+                        if (diff === this.selectedIntervals[1]) return is345 ? 'r' : 'l';
+                        if (diff === this.selectedIntervals[2]) return is345 ? 'p' : 'j';
+                        return '';
+                    };
+                    const applyTransform = (fromKey, targetLabel) => {
+                        const t1 = this.parseKey(fromKey);
+                        for (const nbKey of this.getNeighbors(t1)) {
+                            const t2 = this.parseKey(nbKey);
+                            const nodes1 = this.getTriangleNodes(t1);
+                            const keys2 = new Set(this.getTriangleNodes(t2).map(n => n.key));
+                            const shared = nodes1.filter(n => keys2.has(n.key));
+                            if (shared.length === 2 && edgeLabel(getIntIC(shared[0], shared[1])) === targetLabel) {
+                                return nbKey;
+                            }
+                        }
+                        return null;
+                    };
+
+                    const tokens = this.traceInput.includes(',')
+                        ? this.traceInput.split(',').map(s => s.trim()).filter(Boolean)
+                        : this.traceInput.trim().split(/\s+/);
 
                     this.trajectoryKeys = new Set();
-                    this.trajectorySeq = []; // Initialize empty so the sequence starts precisely at the first parsed chord
+                    this.trajectorySeq = [];
                     let currentKey = '0_0_0';
 
-                    for (let target of chords) {
-                        if (target.includes('NaN')) continue;
-                        let found = this.findClosestTriangle(currentKey, target);
-                        if (found) {
-                            if (this.trajectorySeq.length === 0 || this.trajectorySeq[this.trajectorySeq.length - 1] !== found.key) {
-                                this.trajectoryKeys.add(found.key);
-                                this.revealedKeys.add(found.key);
-                                this.trajectorySeq.push(found.key);
+                    for (const token of tokens) {
+                        const lc = token.toLowerCase();
+                        if (transformSet.has(lc)) {
+                            // Transformation token: ensure we have a starting position in the sequence
+                            if (this.trajectorySeq.length === 0) {
+                                this.trajectoryKeys.add(currentKey);
+                                this.revealedKeys.add(currentKey);
+                                this.trajectorySeq.push(currentKey);
                             }
-                            currentKey = found.key;
+                            const nextKey = applyTransform(currentKey, lc);
+                            if (nextKey) {
+                                this.trajectoryKeys.add(nextKey);
+                                this.revealedKeys.add(nextKey);
+                                this.trajectorySeq.push(nextKey);
+                                currentKey = nextKey;
+                            } else {
+                                this.traceError = 'Could not apply transformation: ' + token.toUpperCase();
+                                break;
+                            }
                         } else {
-                            this.traceError = 'Could not find chord: ' + target + ' in this Tonnetz.';
-                            break;
+                            // Chord / pitch-class token: find via BFS
+                            const target = this.parseChordPitches(token);
+                            if (target.includes('NaN')) continue;
+                            const found = this.findClosestTriangle(currentKey, target);
+                            if (found) {
+                                if (this.trajectorySeq.length === 0 || this.trajectorySeq[this.trajectorySeq.length - 1] !== found.key) {
+                                    this.trajectoryKeys.add(found.key);
+                                    this.revealedKeys.add(found.key);
+                                    this.trajectorySeq.push(found.key);
+                                }
+                                currentKey = found.key;
+                            } else {
+                                this.traceError = 'Could not find chord: ' + target + ' in this Tonnetz.';
+                                break;
+                            }
                         }
                     }
-                    
+
                     this.trajectoryKeys = new Set(this.trajectoryKeys);
                     this.revealedKeys = new Set(this.revealedKeys);
                     this.$forceUpdate();
