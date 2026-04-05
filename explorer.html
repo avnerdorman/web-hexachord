@@ -362,13 +362,14 @@
             return 440 * Math.pow(2, (midi - 69) / 12);
         }
 
-        // Maps a grid node {x,y} to a MIDI pitch voiced around C4 (MIDI 60).
-        // Adapted from tonnetzLike.js nodesToPitches, re-anchored from 81 → 60.
+        // Maps a grid node {x,y} to a MIDI pitch, using the same pitch-class
+        // formula as getNoteId(), placed in the octave closest to C4 (MIDI 60).
         function nodeToMidi(node, intervals) {
-            const raw = 60 - node.x * intervals[0] + node.y * (intervals[2] - 12);
-            // Keep the note at or above its pitch class (prevents negative MIDI values)
-            const pc = ((raw % 12) + 12) % 12;
-            return Math.max(raw, pc);
+            const pc = ((node.x * intervals[1] + node.y * (12 - intervals[2])) % 12 + 12) % 12;
+            // Choose the octave that places this pc closest to C4 (MIDI 60)
+            // Candidates: pc + 48 (oct3), pc + 60 (oct4), pc + 72 (oct5)
+            const candidates = [pc + 48, pc + 60, pc + 72];
+            return candidates.reduce((best, m) => Math.abs(m - 60) < Math.abs(best - 60) ? m : best);
         }
 
         // Returns the MIDI pitch for a pitch class placed in octave 2 (C2=36 … B2=47).
@@ -412,6 +413,14 @@
                 ? getNormalOrder(noteIds)[0]
                 : noteIds[0];
             const bassMidi = bassOctaveMidi(bassPC);
+            const NOTE_NAMES_LOG = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+            const chordNames = noteIds.map(pc => NOTE_NAMES_LOG[pc]);
+            console.log(
+                'chord:', chordNames, '(PCs:', noteIds, ')',
+                '| normalOrder:', getNormalOrder(noteIds).map(pc => NOTE_NAMES_LOG[pc]),
+                '| bass:', NOTE_NAMES_LOG[bassPC] + '2 (midi ' + bassMidi + ')',
+                '| upper voices (midi):', midiPitches.map(m => NOTE_NAMES_LOG[m % 12] + Math.floor(m/12 - 1) + ' (' + m + ')')
+            );
 
             const allMidi = [bassMidi, ...midiPitches];
             const gain = ctx.createGain();
