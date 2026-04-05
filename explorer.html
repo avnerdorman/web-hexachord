@@ -670,17 +670,22 @@
                     this.$forceUpdate();
                 },
                 expandFull() {
+                    // Work on a plain Set directly, bypassing Vue reactivity mid-loop
+                    const revealed = new Set(this.revealedKeys);
                     let safety = 0;
-                    let prev = -1;
-                    while (safety++ < 500) {
-                        const placeholders = this.revealedTriangles.flatMap(t =>
-                            this.getNeighbors(t).filter(k => !this.revealedKeys.has(k))
-                        );
-                        if (placeholders.length === 0 || this.revealedKeys.size === prev) break;
-                        prev = this.revealedKeys.size;
-                        placeholders.forEach(k => this.revealedKeys.add(k));
+                    let added = 1;
+                    while (added > 0 && safety++ < 500) {
+                        added = 0;
+                        for (const key of [...revealed]) {
+                            for (const nbKey of this.getNeighbors(this.parseKey(key))) {
+                                if (!revealed.has(nbKey)) {
+                                    revealed.add(nbKey);
+                                    added++;
+                                }
+                            }
+                        }
                     }
-                    this.revealedKeys = new Set(this.revealedKeys);
+                    this.revealedKeys = revealed;
                     this.$forceUpdate();
                 },
                 parseChordPitches(str) {
